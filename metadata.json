@@ -1,0 +1,8 @@
+{
+  "name": "Asistente Analítico de Inversiones",
+  "description": "Asistente Analítico de Inversiones de Mercado Financiero especializado en Análisis Fundamental y Macroeconomía para inversores en Argentina.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
