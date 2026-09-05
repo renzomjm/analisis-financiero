@@ -207,9 +207,8 @@ async function startServer() {
       async function generateWithFallbacks() {
         // High-availability models with separate free-tier quota pools
         const candidateModels = [
-          "gemini-3.5-flash-lite",
           "gemini-3.1-flash-lite",
-          "gemini-3.7-flash"
+          "gemini-3.8-flash",
         ];
 
         let lastErr: any = null;
@@ -313,7 +312,7 @@ Responde ÚNICAMENTE con un JSON válido con este formato:
 
       try {
         const response = await ai.models.generateContent({
-          model: "gemini-3.5-flash-lite",
+          model: "gemini-3.1-flash-lite",
           contents: prompt,
           config: {
             tools: [{ googleSearch: {} }]
