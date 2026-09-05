@@ -234,7 +234,7 @@ ${holdings.map(h => `  * ${h.ticker} (${h.name} - ${h.assetType}): ${h.nominales
       };
       setMessages(prev => [...prev, modelMsg]);
     } catch (err: any) {
-      console.warn("Notice: Chat request failed or timed out:", err);
+      console.log("Chat request notice:", err?.message || err);
       const errorMsg: Message = {
         id: (Date.now() + 1).toString(),
         role: 'model',
