@@ -1,8 +1,8 @@
-import { DollarSign, TrendingUp, RefreshCw, PlusCircle, Edit3, ArrowUpRight, ArrowDownRight, Globe, LayoutGrid, Briefcase, Newspaper, Calendar, LogOut, User as UserIcon } from 'lucide-react';
+import { DollarSign, TrendingUp, RefreshCw, PlusCircle, Edit3, ArrowUpRight, ArrowDownRight, Globe, LayoutGrid, Briefcase, Newspaper, Calendar, LogOut, User as UserIcon, Eye } from 'lucide-react';
 import { MarketRates } from '../types';
 import { User } from '../lib/firebase';
 
-export type ViewMode = 'split' | 'cartera' | 'noticias' | 'calendario';
+export type ViewMode = 'split' | 'cartera' | 'watchlist' | 'noticias' | 'calendario';
 
 interface HeaderMetricsProps {
   totalArs: number;
@@ -12,6 +12,7 @@ interface HeaderMetricsProps {
   dailyChangeArs: number;
   dailyChangePct: number;
   marketRates: MarketRates;
+  watchlistCount?: number;
   onOpenTransactionModal: () => void;
   onOpenEditMepModal: () => void;
   onRefreshMarketData: () => void;
@@ -33,6 +34,7 @@ export default function HeaderMetrics({
   dailyChangeArs,
   dailyChangePct,
   marketRates,
+  watchlistCount = 0,
   onOpenTransactionModal,
   onOpenEditMepModal,
   onRefreshMarketData,
@@ -112,6 +114,25 @@ export default function HeaderMetrics({
             >
               <Briefcase className="w-3.5 h-3.5" />
               <span>Cartera</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onSelectViewMode('watchlist')}
+              title="Desplegar Lista de Seguimiento de empresas de interés"
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
+                viewMode === 'watchlist'
+                  ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40 shadow-xs font-semibold'
+                  : 'text-[#a1a1aa] hover:text-white'
+              }`}
+            >
+              <Eye className="w-3.5 h-3.5 text-sky-400" />
+              <span>Seguimiento</span>
+              {watchlistCount > 0 && (
+                <span className="text-[10px] bg-sky-500/20 text-sky-300 px-1.5 py-0.2 rounded-full font-mono font-bold">
+                  {watchlistCount}
+                </span>
+              )}
             </button>
 
             <button

@@ -17,7 +17,7 @@ import {
   writeBatch 
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
-import { Holding, Transaction } from '../types';
+import { Holding, Transaction, WatchlistItem } from '../types';
 
 // Initialize Firebase App
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApps()[0];
@@ -33,25 +33,37 @@ export const db = firebaseConfig.firestoreDatabaseId
   : getFirestore(app);
 
 // Authentication Functions
-export const signInWithGoogle = async (): Promise<User> => {
-  const result = await signInWithPopup(auth, googleProvider);
-  const user = result.user;
-
-  // Persist basic user profile
+export const signInWithGoogle = async (): Promise<User | null> => {
   try {
-    const userRef = doc(db, 'users', user.uid);
-    await setDoc(userRef, {
-      uid: user.uid,
-      email: user.email,
-      displayName: user.displayName,
-      photoURL: user.photoURL,
-      lastLoginAt: new Date().toISOString()
-    }, { merge: true });
-  } catch (err) {
-    console.error('Error saving user profile to Firestore:', err);
-  }
+    const result = await signInWithPopup(auth, googleProvider);
+    const user = result.user;
 
-  return user;
+    // Persist basic user profile
+    try {
+      const userRef = doc(db, 'users', user.uid);
+      await setDoc(userRef, {
+        uid: user.uid,
+        email: user.email,
+        displayName: user.displayName,
+        photoURL: user.photoURL,
+        lastLoginAt: new Date().toISOString()
+      }, { merge: true });
+    } catch (err) {
+      console.warn('Notice: saving user profile to Firestore:', err);
+    }
+
+    return user;
+  } catch (err: any) {
+    // When the user dismisses or closes the popup window, or cancels the request
+    if (
+      err?.code === 'auth/popup-closed-by-user' ||
+      err?.code === 'auth/cancelled-popup-request'
+    ) {
+      // Intentional user cancellation, do not throw or log console error
+      return null;
+    }
+    throw err;
+  }
 };
 
 export const logout = async (): Promise<void> => {
@@ -65,15 +77,18 @@ export type { User };
 export async function loadUserPortfolio(userId: string): Promise<{
   holdings: Holding[];
   transactions: Transaction[];
+  watchlist: WatchlistItem[];
   isNewUser: boolean;
 }> {
   try {
     const holdingsRef = collection(db, 'users', userId, 'holdings');
     const transactionsRef = collection(db, 'users', userId, 'transactions');
+    const watchlistRef = collection(db, 'users', userId, 'watchlist');
 
-    const [holdingsSnap, transactionsSnap] = await Promise.all([
+    const [holdingsSnap, transactionsSnap, watchlistSnap] = await Promise.all([
       getDocs(holdingsRef),
-      getDocs(transactionsRef)
+      getDocs(transactionsRef),
+      getDocs(watchlistRef)
     ]);
 
     const holdings: Holding[] = holdingsSnap.docs.map(d => ({
@@ -84,12 +99,16 @@ export async function loadUserPortfolio(userId: string): Promise<{
       ...d.data()
     } as Transaction));
 
+    const watchlist: WatchlistItem[] = watchlistSnap.docs.map(d => ({
+      ...d.data()
+    } as WatchlistItem));
+
     // Sort transactions by date descending
     transactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-    const isNewUser = holdingsSnap.empty && transactionsSnap.empty;
+    const isNewUser = holdingsSnap.empty && transactionsSnap.empty && watchlistSnap.empty;
 
-    return { holdings, transactions, isNewUser };
+    return { holdings, transactions, watchlist, isNewUser };
   } catch (error) {
     console.error('Error loading portfolio from Firestore:', error);
     throw error;
@@ -154,6 +173,37 @@ export async function saveUserTransactions(userId: string, transactions: Transac
     await batch.commit();
   } catch (error) {
     console.error('Error saving transactions to Firestore:', error);
+    throw error;
+  }
+}
+
+export async function saveUserWatchlist(userId: string, watchlist: WatchlistItem[]): Promise<void> {
+  try {
+    const watchRef = collection(db, 'users', userId, 'watchlist');
+    const existingSnap = await getDocs(watchRef);
+
+    const batch = writeBatch(db);
+
+    // Delete removed watchlist items
+    const currentIds = new Set(watchlist.map(w => w.id));
+    existingSnap.docs.forEach(d => {
+      if (!currentIds.has(d.id)) {
+        batch.delete(d.ref);
+      }
+    });
+
+    // Write all current watchlist items
+    watchlist.forEach(w => {
+      const docRef = doc(db, 'users', userId, 'watchlist', w.id);
+      batch.set(docRef, {
+        ...w,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+    });
+
+    await batch.commit();
+  } catch (error) {
+    console.error('Error saving watchlist to Firestore:', error);
     throw error;
   }
 }

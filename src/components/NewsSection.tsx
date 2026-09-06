@@ -21,7 +21,7 @@ export default function NewsSection({
   isMaximized = false,
   onToggleMaximize
 }: NewsSectionProps) {
-  const [filter, setFilter] = useState<'Todos' | 'Cartera' | 'Macro' | 'Balances'>('Todos');
+  const [filter, setFilter] = useState<'Todos' | 'Cartera' | 'Seguimiento' | 'Balances' | 'Macro'>('Todos');
 
   const filteredNews = news.filter(item => {
     if (filter === 'Todos') return true;
@@ -52,7 +52,7 @@ export default function NewsSection({
         <div className="flex items-center gap-1">
           {/* Filter pills inline */}
           <div className="flex items-center gap-1 overflow-x-auto text-[11px]">
-            {(['Todos', 'Cartera', 'Balances', 'Macro'] as const).map(cat => (
+            {(['Todos', 'Cartera', 'Seguimiento', 'Balances', 'Macro'] as const).map(cat => (
               <button
                 key={cat}
                 type="button"
@@ -114,9 +114,11 @@ export default function NewsSection({
                     <span className={`text-[9px] font-semibold px-1.5 py-0.2 rounded ${
                       item.category === 'Cartera'
                         ? 'bg-amber-500/15 text-amber-400'
+                        : item.category === 'Seguimiento'
+                        ? 'bg-sky-500/15 text-sky-400'
                         : item.category === 'Balances'
                         ? 'bg-purple-500/15 text-purple-400'
-                        : 'bg-sky-500/15 text-sky-400'
+                        : 'bg-emerald-500/15 text-emerald-400'
                     }`}>
                       {item.category}
                     </span>

@@ -17,19 +17,23 @@ import {
   ChevronUp,
   CornerDownLeft,
   RefreshCw,
-  Radio
+  Radio,
+  Eye
 } from 'lucide-react';
-import { Holding, Transaction } from '../types';
+import { Holding, Transaction, WatchlistItem } from '../types';
 import { User } from '../lib/firebase';
 
 interface PortfolioSectionProps {
   holdings: Holding[];
   transactions: Transaction[];
+  watchlist?: WatchlistItem[];
   dollarMep: number;
   onOpenTransactionModal: (preselectedTicker?: string) => void;
+  onOpenAddWatchlistModal?: () => void;
   onUpdateHolding: (updated: Holding) => void;
   onDeleteHolding: (id: string) => void;
   onDeleteTransaction: (id: string) => void;
+  onDeleteWatchlist?: (id: string) => void;
   onAskAssistantAboutTicker: (ticker: string) => void;
   onClearPortfolio?: () => void;
   onRefreshQuotes?: () => void;
@@ -44,11 +48,14 @@ interface PortfolioSectionProps {
 export default function PortfolioSection({
   holdings,
   transactions,
+  watchlist = [],
   dollarMep,
   onOpenTransactionModal,
+  onOpenAddWatchlistModal,
   onUpdateHolding,
   onDeleteHolding,
   onDeleteTransaction,
+  onDeleteWatchlist,
   onAskAssistantAboutTicker,
   onClearPortfolio,
   onRefreshQuotes,
@@ -59,7 +66,7 @@ export default function PortfolioSection({
   currentUser,
   onOpenAuthModal
 }: PortfolioSectionProps) {
-  const [activeTab, setActiveTab] = useState<'tenencias' | 'operaciones'>('tenencias');
+  const [activeTab, setActiveTab] = useState<'tenencias' | 'watchlist' | 'operaciones'>('tenencias');
   const [editingHoldingId, setEditingHoldingId] = useState<string | null>(null);
   const [editNominales, setEditNominales] = useState<number>(0);
   const [editCurrentPrice, setEditCurrentPrice] = useState<number>(0);
@@ -259,6 +266,18 @@ export default function PortfolioSection({
               }`}
             >
               Tenencias
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('watchlist')}
+              className={`px-2 py-0.5 rounded text-xs font-medium transition-all flex items-center gap-1 ${
+                activeTab === 'watchlist' 
+                  ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40 shadow-xs font-semibold' 
+                  : 'text-[#a1a1aa] hover:text-white'
+              }`}
+            >
+              <Eye className="w-3 h-3 text-sky-400" />
+              <span>Seguimiento ({watchlist.length})</span>
             </button>
             <button
               type="button"
@@ -678,6 +697,117 @@ export default function PortfolioSection({
               </div>
             </>
           )}
+        </div>
+      ) : activeTab === 'watchlist' ? (
+        /* Watchlist tab */
+        <div className="mt-2.5 flex-1 flex flex-col min-h-0">
+          <div className="flex items-center justify-between pb-2 mb-2 border-b border-[#27272a]">
+            <div className="text-xs text-[#a1a1aa]">
+              Empresas y activos en seguimiento para análisis fundamental
+            </div>
+            {onOpenAddWatchlistModal && (
+              <button
+                type="button"
+                onClick={onOpenAddWatchlistModal}
+                className="flex items-center gap-1 px-2.5 py-1 bg-sky-500 hover:bg-sky-400 text-black font-bold text-xs rounded-lg shadow-xs transition-all cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Agregar a Seguimiento</span>
+              </button>
+            )}
+          </div>
+
+          <div className="overflow-x-auto rounded-lg border border-[#27272a] bg-[#18181b]/50 overflow-y-auto max-h-[360px] xl:max-h-[calc(100vh-250px)]">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead className="sticky top-0 z-10 bg-[#18181b] border-b border-[#27272a]">
+                <tr className="text-[#71717a] uppercase text-[9px] tracking-wider font-semibold">
+                  <th className="py-2 px-2.5">Ticker</th>
+                  <th className="py-2 px-2">Empresa / Activo</th>
+                  <th className="py-2 px-2">Tipo</th>
+                  <th className="py-2 px-2 text-right">Precio Actual</th>
+                  <th className="py-2 px-2 text-right">Variación Día</th>
+                  <th className="py-2 px-2 text-center">Acciones</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#27272a]/50">
+                {watchlist.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="text-center py-10 text-xs text-[#71717a]">
+                      <div className="flex flex-col items-center justify-center gap-2">
+                        <Eye className="w-6 h-6 text-[#52525b]" />
+                        <span>No tienes tickers en la lista de seguimiento.</span>
+                        {onOpenAddWatchlistModal && (
+                          <button
+                            type="button"
+                            onClick={onOpenAddWatchlistModal}
+                            className="mt-1 text-xs text-sky-400 hover:underline cursor-pointer font-medium"
+                          >
+                            + Agregar tu primer ticket de seguimiento
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  watchlist.map((item) => {
+                    const isPositive = item.dailyChangePct >= 0;
+                    return (
+                      <tr key={item.id} className="hover:bg-[#27272a]/40 text-xs">
+                        <td className="py-2 px-2.5 font-bold font-mono text-white">
+                          <span className="bg-[#27272a] px-1.5 py-0.5 rounded border border-[#3f3f46]">
+                            ${item.ticker}
+                          </span>
+                        </td>
+                        <td className="py-2 px-2 text-white font-medium max-w-[200px] truncate" title={item.name}>
+                          {item.name}
+                        </td>
+                        <td className="py-2 px-2">
+                          <span className="text-[10px] text-[#a1a1aa] bg-[#09090b] px-1.5 py-0.5 rounded font-sans">
+                            {item.assetType}
+                          </span>
+                        </td>
+                        <td className="py-2 px-2 text-right font-mono font-bold text-white">
+                          {item.currentPrice > 0 
+                            ? `$${item.currentPrice.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${item.currency}`
+                            : 'Sin cotización'}
+                        </td>
+                        <td className="py-2 px-2 text-right font-mono">
+                          <span className={`font-semibold flex items-center justify-end gap-0.5 ${
+                            isPositive ? 'text-emerald-400' : 'text-rose-400'
+                          }`}>
+                            {isPositive ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+                            {isPositive ? '+' : ''}{item.dailyChangePct.toFixed(2)}%
+                          </span>
+                        </td>
+                        <td className="py-2 px-2 text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => onAskAssistantAboutTicker(item.ticker)}
+                              title={`Consultar análisis fundamental de ${item.ticker} con el Asistente`}
+                              className="p-1 text-amber-400 hover:bg-amber-500/20 rounded transition-colors cursor-pointer"
+                            >
+                              <Sparkles className="w-3.5 h-3.5" />
+                            </button>
+                            {onDeleteWatchlist && (
+                              <button
+                                type="button"
+                                onClick={() => onDeleteWatchlist(item.id)}
+                                title="Eliminar de la lista de seguimiento"
+                                className="p-1 text-[#71717a] hover:text-rose-400 hover:bg-[#27272a] rounded transition-colors cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       ) : (
         /* Transactions tab */

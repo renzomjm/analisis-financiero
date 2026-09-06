@@ -31,7 +31,7 @@ export interface NewsItem {
   fullContent: string;
   source: string;
   date: string;
-  category: 'Cartera' | 'Macro' | 'Balances' | 'Mercado';
+  category: 'Cartera' | 'Seguimiento' | 'Macro' | 'Balances' | 'Mercado';
   relatedTickers: string[];
   url?: string;
 }
@@ -65,4 +65,16 @@ export interface Message {
   id: string;
   role: 'user' | 'model';
   text: string;
+}
+
+export interface WatchlistItem {
+  id: string;
+  ticker: string;
+  name: string;
+  assetType: AssetType;
+  currency: 'ARS' | 'USD';
+  currentPrice: number;
+  dailyChangePct: number;
+  notes?: string;
+  addedAt: string;
 }

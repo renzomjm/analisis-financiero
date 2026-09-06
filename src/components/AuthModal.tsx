@@ -5,11 +5,11 @@ import {
   ArrowRight, 
   Database, 
   Lock, 
-  DollarSign, 
   BarChart3, 
-  AlertCircle,
-  CheckCircle2,
-  RefreshCw
+  Info,
+  ExternalLink,
+  RefreshCw,
+  X
 } from 'lucide-react';
 import { signInWithGoogle } from '../lib/firebase';
 
@@ -28,16 +28,21 @@ export default function AuthModal({ isOpen, onSuccess }: AuthModalProps) {
     setLoading(true);
     setError(null);
     try {
-      await signInWithGoogle();
-      onSuccess();
-    } catch (err: any) {
-      console.error('Error in Google login:', err);
-      if (err.code === 'auth/popup-closed-by-user') {
-        setError('El inicio de sesión fue cancelado antes de completarse.');
-      } else if (err.code === 'auth/popup-blocked') {
-        setError('La ventana emergente de Google fue bloqueada por tu navegador. Por favor habilita ventanas emergentes para este sitio.');
+      const user = await signInWithGoogle();
+      if (user) {
+        onSuccess();
       } else {
-        setError(err.message || 'Ocurrió un error al intentar iniciar sesión con Google.');
+        // User closed or cancelled popup window
+        setError('El inicio de sesión fue cancelado o la ventana se cerró antes de finalizar.');
+      }
+    } catch (err: unknown) {
+      const errorObj = err as { code?: string; message?: string };
+      if (errorObj?.code === 'auth/popup-blocked') {
+        setError('El navegador bloqueó la ventana emergente de Google. Por favor autoriza las ventanas emergentes o abre la app en una nueva pestaña.');
+      } else if (errorObj?.code === 'auth/network-request-failed') {
+        setError('Problema de conexión al contactar el servidor de autenticación de Google. Verifica tu conexión e intenta nuevamente.');
+      } else {
+        setError(errorObj?.message || 'Ocurrió un error al intentar iniciar sesión con Google.');
       }
     } finally {
       setLoading(false);
@@ -46,8 +51,18 @@ export default function AuthModal({ isOpen, onSuccess }: AuthModalProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
-      <div className="bg-[#121214] border border-[#27272a] rounded-2xl w-full max-w-md overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+      <div className="bg-[#121214] border border-[#27272a] rounded-2xl w-full max-w-md overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200 relative">
         
+        {/* Dismiss button */}
+        <button
+          type="button"
+          onClick={onSuccess}
+          className="absolute top-4 right-4 p-1.5 text-[#71717a] hover:text-white rounded-lg hover:bg-[#27272a] transition-colors cursor-pointer"
+          title="Cerrar modal"
+        >
+          <X className="w-4 h-4" />
+        </button>
+
         {/* Top Banner Accent */}
         <div className="h-1.5 bg-gradient-to-r from-amber-500 via-emerald-500 to-sky-500 w-full" />
 
@@ -62,7 +77,7 @@ export default function AuthModal({ isOpen, onSuccess }: AuthModalProps) {
             Acceso a Cartera ARG-INTEL
           </h2>
           <p className="text-xs text-[#a1a1aa] mt-1.5 max-w-sm mx-auto leading-relaxed">
-            Inicia sesión con tu cuenta de Google para guardar, sincronizar y proteger tu cartera de inversión en la nube con Firebase.
+            Inicia sesión con tu cuenta de Google para sincronizar y guardar de forma segura tus tenencias y operaciones en la base de datos de Firebase.
           </p>
 
           {/* Benefits Grid */}
@@ -70,26 +85,26 @@ export default function AuthModal({ isOpen, onSuccess }: AuthModalProps) {
             <div className="flex items-start gap-2.5 text-[#d4d4d8]">
               <Database className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
               <span>
-                <strong className="text-white font-medium">Persistencia en la nube:</strong> Tus tenencias, operaciones y precios promedio quedan guardados de forma privada.
+                <strong className="text-white font-medium">Persistencia en Firestore:</strong> Tus compras, ventas y precios promedio quedan salvados en la nube.
               </span>
             </div>
             <div className="flex items-start gap-2.5 text-[#d4d4d8]">
               <Lock className="w-4 h-4 text-[#f59e0b] shrink-0 mt-0.5" />
               <span>
-                <strong className="text-white font-medium">Seguridad por usuario:</strong> Solo tú tienes acceso a los activos registrados bajo tu cuenta.
+                <strong className="text-white font-medium">Seguridad por usuario:</strong> Solo tú tienes acceso a los activos registrados con tu cuenta de Google.
               </span>
             </div>
             <div className="flex items-start gap-2.5 text-[#d4d4d8]">
               <BarChart3 className="w-4 h-4 text-sky-400 shrink-0 mt-0.5" />
               <span>
-                <strong className="text-white font-medium">Sincronización en vivo:</strong> Consulta tus valuaciones, ratios y balances desde cualquier dispositivo.
+                <strong className="text-white font-medium">Sincronización en vivo:</strong> Valuaciones en ARS y USD MEP al instante en todos tus dispositivos.
               </span>
             </div>
           </div>
 
           {error && (
-            <div className="mb-4 p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl flex items-start gap-2.5 text-xs text-rose-300 text-left">
-              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+            <div className="mb-4 p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl flex items-start gap-2.5 text-xs text-amber-200 text-left">
+              <Info className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
               <span>{error}</span>
             </div>
           )}
@@ -131,6 +146,15 @@ export default function AuthModal({ isOpen, onSuccess }: AuthModalProps) {
                 <ArrowRight className="w-4 h-4 text-zinc-600 group-hover:translate-x-0.5 transition-transform" />
               </>
             )}
+          </button>
+
+          {/* Secondary Action: explore locally */}
+          <button
+            type="button"
+            onClick={onSuccess}
+            className="mt-3 w-full py-2 text-xs text-[#a1a1aa] hover:text-white transition-colors cursor-pointer"
+          >
+            Continuar explorando en modo local
           </button>
 
           <div className="mt-4 flex items-center justify-center gap-2 text-[11px] text-[#71717a]">
