@@ -1,0 +1,51 @@
+{
+  "entities": {
+    "users": {
+      "title": "User",
+      "description": "User profile with email, displayName and settings",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "subcollections": {
+        "holdings": {
+          "title": "Holding",
+          "description": "User portfolio holding asset",
+          "type": "object",
+          "properties": {
+            "id": { "type": "string" },
+            "ticker": { "type": "string" },
+            "name": { "type": "string" },
+            "assetType": { "type": "string" },
+            "nominales": { "type": "number" },
+            "avgPurchasePrice": { "type": "number" },
+            "currentPrice": { "type": "number" },
+            "currency": { "type": "string" },
+            "dailyChangePct": { "type": "number" },
+            "updatedAt": { "type": "string" }
+          }
+        },
+        "transactions": {
+          "title": "Transaction",
+          "description": "User buy/sell transaction ledger",
+          "type": "object",
+          "properties": {
+            "id": { "type": "string" },
+            "date": { "type": "string" },
+            "ticker": { "type": "string" },
+            "type": { "type": "string" },
+            "nominales": { "type": "number" },
+            "price": { "type": "number" },
+            "currency": { "type": "string" },
+            "notes": { "type": "string" },
+            "createdAt": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}

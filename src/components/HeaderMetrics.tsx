@@ -1,5 +1,6 @@
-import { DollarSign, TrendingUp, RefreshCw, PlusCircle, Edit3, ArrowUpRight, ArrowDownRight, Globe, LayoutGrid, Briefcase, Newspaper, Calendar, Minimize2, Maximize2 } from 'lucide-react';
+import { DollarSign, TrendingUp, RefreshCw, PlusCircle, Edit3, ArrowUpRight, ArrowDownRight, Globe, LayoutGrid, Briefcase, Newspaper, Calendar, LogOut, User as UserIcon } from 'lucide-react';
 import { MarketRates } from '../types';
+import { User } from '../lib/firebase';
 
 export type ViewMode = 'split' | 'cartera' | 'noticias' | 'calendario';
 
@@ -19,6 +20,9 @@ interface HeaderMetricsProps {
   onToggleSearch: () => void;
   viewMode: ViewMode;
   onSelectViewMode: (mode: ViewMode) => void;
+  currentUser?: User | null;
+  onLogout?: () => void;
+  onOpenAuthModal?: () => void;
 }
 
 export default function HeaderMetrics({
@@ -36,7 +40,10 @@ export default function HeaderMetrics({
   useSearch,
   onToggleSearch,
   viewMode,
-  onSelectViewMode
+  onSelectViewMode,
+  currentUser,
+  onLogout,
+  onOpenAuthModal
 }: HeaderMetricsProps) {
   const formatArs = (val: number) => {
     return new Intl.NumberFormat('es-AR', {
@@ -225,6 +232,57 @@ export default function HeaderMetrics({
             <PlusCircle className="w-3.5 h-3.5" />
             <span>Operación</span>
           </button>
+
+          {/* User Profile / Firebase Auth Status */}
+          {currentUser ? (
+            <div className="flex items-center gap-2 pl-2 border-l border-[#27272a]">
+              <div className="flex items-center gap-1.5" title={currentUser.email || currentUser.displayName || 'Usuario'}>
+                {currentUser.photoURL ? (
+                  <img 
+                    src={currentUser.photoURL} 
+                    alt={currentUser.displayName || 'Usuario'} 
+                    className="w-6 h-6 rounded-full border border-emerald-500/60 object-cover"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <div className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center justify-center text-[10px] font-bold">
+                    {currentUser.displayName ? currentUser.displayName[0].toUpperCase() : 'U'}
+                  </div>
+                )}
+                <div className="hidden 2xl:flex flex-col text-left">
+                  <span className="text-[11px] font-semibold text-white truncate max-w-[100px]">
+                    {currentUser.displayName?.split(' ')[0] || 'Inversor'}
+                  </span>
+                  <span className="text-[9px] text-emerald-400 flex items-center gap-0.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
+                    Cloud Sync
+                  </span>
+                </div>
+              </div>
+
+              {onLogout && (
+                <button
+                  type="button"
+                  onClick={onLogout}
+                  className="p-1.5 text-[#71717a] hover:text-rose-400 hover:bg-[#27272a] rounded-lg transition-colors cursor-pointer"
+                  title="Cerrar sesión de Google"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          ) : (
+            onOpenAuthModal && (
+              <button
+                type="button"
+                onClick={onOpenAuthModal}
+                className="flex items-center gap-1.5 px-3 py-1 bg-white hover:bg-zinc-100 text-black text-xs font-bold rounded-lg shadow-xs transition-all cursor-pointer whitespace-nowrap"
+              >
+                <UserIcon className="w-3.5 h-3.5" />
+                <span>Ingresar con Google</span>
+              </button>
+            )
+          )}
         </div>
 
       </div>

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import HeaderMetrics, { ViewMode } from './components/HeaderMetrics';
 import PortfolioSection from './components/PortfolioSection';
 import NewsSection from './components/NewsSection';
@@ -7,6 +7,16 @@ import DockedChat from './components/DockedChat';
 import TransactionModal from './components/TransactionModal';
 import NewsDetailModal from './components/NewsDetailModal';
 import EditMepModal from './components/EditMepModal';
+import AuthModal from './components/AuthModal';
+import { 
+  auth, 
+  logout, 
+  onAuthStateChanged, 
+  loadUserPortfolio, 
+  saveUserHoldings, 
+  saveUserTransactions, 
+  User 
+} from './lib/firebase';
 import { 
   Holding, 
   Transaction, 
@@ -25,7 +35,13 @@ import {
 } from './data/initialData';
 
 export default function App() {
-  // --- Persistent State in LocalStorage (Initialized clean for user's real portfolio) ---
+  // --- User Authentication State (Firebase) ---
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState<boolean>(true);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
+  const isSyncingWithFirestore = useRef<boolean>(false);
+
+  // --- Persistent State in LocalStorage and Firestore ---
   const [holdings, setHoldings] = useState<Holding[]>(() => {
     try {
       const realPortfolioMigrated = localStorage.getItem('arg_intel_real_portfolio_v3');
@@ -82,14 +98,69 @@ export default function App() {
     }
   });
 
-  // --- Save to LocalStorage on Change ---
+  // --- Listen to Firebase Auth state change ---
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      setCurrentUser(user);
+      setIsAuthLoading(false);
+
+      if (user) {
+        // User logged in: load user's private portfolio from Firestore
+        isSyncingWithFirestore.current = true;
+        try {
+          const { holdings: remoteHoldings, transactions: remoteTransactions, isNewUser } = await loadUserPortfolio(user.uid);
+          
+          if (!isNewUser) {
+            setHoldings(remoteHoldings);
+            setTransactions(remoteTransactions);
+          } else {
+            // If new user in cloud, check if they have local holdings to migrate
+            const savedHoldings = localStorage.getItem('arg_intel_holdings');
+            const parsedHoldings: Holding[] = savedHoldings ? JSON.parse(savedHoldings) : [];
+            const savedTxs = localStorage.getItem('arg_intel_transactions');
+            const parsedTxs: Transaction[] = savedTxs ? JSON.parse(savedTxs) : [];
+
+            if (parsedHoldings.length > 0 || parsedTxs.length > 0) {
+              await saveUserHoldings(user.uid, parsedHoldings);
+              await saveUserTransactions(user.uid, parsedTxs);
+              setHoldings(parsedHoldings);
+              setTransactions(parsedTxs);
+            }
+          }
+        } catch (err) {
+          console.error('Error loading portfolio from Firestore:', err);
+        } finally {
+          isSyncingWithFirestore.current = false;
+        }
+      } else {
+        // User not logged in: show auth modal so they can log in
+        setIsAuthModalOpen(true);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // --- Save to Firestore whenever holdings or transactions change if logged in ---
   useEffect(() => {
     localStorage.setItem('arg_intel_holdings', JSON.stringify(holdings));
-  }, [holdings]);
+
+    if (currentUser && !isSyncingWithFirestore.current) {
+      saveUserHoldings(currentUser.uid, holdings).catch(err => {
+        console.warn('Error syncing holdings to cloud:', err);
+      });
+    }
+  }, [holdings, currentUser]);
 
   useEffect(() => {
     localStorage.setItem('arg_intel_transactions', JSON.stringify(transactions));
-  }, [transactions]);
+
+    if (currentUser && !isSyncingWithFirestore.current) {
+      saveUserTransactions(currentUser.uid, transactions).catch(err => {
+        console.warn('Error syncing transactions to cloud:', err);
+      });
+    }
+  }, [transactions, currentUser]);
 
   useEffect(() => {
     localStorage.setItem('arg_intel_market_rates', JSON.stringify(marketRates));
@@ -122,6 +193,10 @@ export default function App() {
   const [selectedNewsForModal, setSelectedNewsForModal] = useState<NewsItem | null>(null);
   const [isEditMepModalOpen, setIsEditMepModalOpen] = useState<boolean>(false);
   const [isRefreshingMarket, setIsRefreshingMarket] = useState<boolean>(false);
+  const [isRefreshingQuotes, setIsRefreshingQuotes] = useState<boolean>(false);
+  const [lastQuotesUpdate, setLastQuotesUpdate] = useState<string>(() => {
+    return localStorage.getItem('arg_intel_last_quotes_update') || '';
+  });
 
   // --- Live Market Rates Fetcher (Dólar MEP, CCL, Oficial, Riesgo País) ---
   const fetchLiveRates = async () => {
@@ -153,6 +228,51 @@ export default function App() {
     }
   };
 
+  // --- Live Stock Exchange Batch Quotes Fetcher (BYMA / NYSE / NASDAQ) ---
+  const handleRefreshQuotes = async () => {
+    if (holdings.length === 0) return;
+    setIsRefreshingQuotes(true);
+
+    try {
+      const tickers = Array.from(new Set(holdings.map(h => h.ticker.toUpperCase())));
+      const res = await fetch('/api/quotes/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tickers,
+          dollarMep: marketRates.dollarMep
+        })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.status === 'ok' && data.quotes) {
+          const quotesMap = data.quotes;
+          setHoldings(prevHoldings => 
+            prevHoldings.map(h => {
+              const q = quotesMap[h.ticker.toUpperCase()];
+              if (q && typeof q.price === 'number') {
+                return {
+                  ...h,
+                  currentPrice: q.price,
+                  dailyChangePct: typeof q.changePct === 'number' ? q.changePct : h.dailyChangePct
+                };
+              }
+              return h;
+            })
+          );
+          const nowStr = new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }) + ' ART';
+          setLastQuotesUpdate(nowStr);
+          localStorage.setItem('arg_intel_last_quotes_update', nowStr);
+        }
+      }
+    } catch (err) {
+      console.warn('Error fetching batch quotes:', err);
+    } finally {
+      setIsRefreshingQuotes(false);
+    }
+  };
+
   // Automatically fetch live rates on startup and every 60 seconds
   useEffect(() => {
     fetchLiveRates();
@@ -160,11 +280,34 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
+  // Refresh holdings quotes on mount if any holdings exist
+  useEffect(() => {
+    if (holdings.length > 0) {
+      handleRefreshQuotes();
+    }
+  }, []);
+
   const handleClearPortfolio = () => {
     setHoldings([]);
     setTransactions([]);
     localStorage.removeItem('arg_intel_holdings');
     localStorage.removeItem('arg_intel_transactions');
+    if (currentUser) {
+      saveUserHoldings(currentUser.uid, []).catch(console.error);
+      saveUserTransactions(currentUser.uid, []).catch(console.error);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      setCurrentUser(null);
+      setHoldings([]);
+      setTransactions([]);
+      setIsAuthModalOpen(true);
+    } catch (err) {
+      console.error('Error logging out:', err);
+    }
   };
 
   // --- Portfolio Calculations ---
@@ -362,7 +505,10 @@ ${holdings.map(h => `  * ${h.ticker} (${h.name} - ${h.assetType}): ${h.nominales
       // 1. Always refresh live Dólar MEP, CCL and Riesgo País from API
       await fetchLiveRates();
 
-      // 2. Refresh news and events based on actual user tickers
+      // 2. Refresh live stock exchange quotes for holdings
+      await handleRefreshQuotes();
+
+      // 3. Refresh news and events based on actual user tickers
       const tickers = holdings.map(h => h.ticker);
       const res = await fetch('/api/market-data/refresh', {
         method: 'POST',
@@ -399,6 +545,10 @@ ${holdings.map(h => `  * ${h.ticker} (${h.name} - ${h.assetType}): ${h.nominales
         dailyChangePct={dailyChangePct}
         marketRates={marketRates}
         onOpenTransactionModal={() => {
+          if (!currentUser) {
+            setIsAuthModalOpen(true);
+            return;
+          }
           setPreselectedTicker(undefined);
           setIsTransactionModalOpen(true);
         }}
@@ -409,6 +559,9 @@ ${holdings.map(h => `  * ${h.ticker} (${h.name} - ${h.assetType}): ${h.nominales
         onToggleSearch={() => setUseSearch(!useSearch)}
         viewMode={viewMode}
         onSelectViewMode={setViewMode}
+        currentUser={currentUser}
+        onLogout={handleLogout}
+        onOpenAuthModal={() => setIsAuthModalOpen(true)}
       />
 
       {/* 2. Main Dashboard Container - Compact 16" Notebook Optimized */}
@@ -425,6 +578,10 @@ ${holdings.map(h => `  * ${h.ticker} (${h.name} - ${h.assetType}): ${h.nominales
                 transactions={transactions}
                 dollarMep={marketRates.dollarMep}
                 onOpenTransactionModal={(ticker) => {
+                  if (!currentUser) {
+                    setIsAuthModalOpen(true);
+                    return;
+                  }
                   setPreselectedTicker(ticker);
                   setIsTransactionModalOpen(true);
                 }}
@@ -433,8 +590,13 @@ ${holdings.map(h => `  * ${h.ticker} (${h.name} - ${h.assetType}): ${h.nominales
                 onDeleteTransaction={handleDeleteTransaction}
                 onAskAssistantAboutTicker={handleAskAboutTicker}
                 onClearPortfolio={handleClearPortfolio}
+                onRefreshQuotes={handleRefreshQuotes}
+                isRefreshingQuotes={isRefreshingQuotes}
+                lastQuotesUpdated={lastQuotesUpdate}
                 isMaximized={false}
                 onToggleMaximize={() => setViewMode('cartera')}
+                currentUser={currentUser}
+                onOpenAuthModal={() => setIsAuthModalOpen(true)}
               />
             </section>
 
@@ -476,6 +638,10 @@ ${holdings.map(h => `  * ${h.ticker} (${h.name} - ${h.assetType}): ${h.nominales
               transactions={transactions}
               dollarMep={marketRates.dollarMep}
               onOpenTransactionModal={(ticker) => {
+                if (!currentUser) {
+                  setIsAuthModalOpen(true);
+                  return;
+                }
                 setPreselectedTicker(ticker);
                 setIsTransactionModalOpen(true);
               }}
@@ -484,8 +650,13 @@ ${holdings.map(h => `  * ${h.ticker} (${h.name} - ${h.assetType}): ${h.nominales
               onDeleteTransaction={handleDeleteTransaction}
               onAskAssistantAboutTicker={handleAskAboutTicker}
               onClearPortfolio={handleClearPortfolio}
+              onRefreshQuotes={handleRefreshQuotes}
+              isRefreshingQuotes={isRefreshingQuotes}
+              lastQuotesUpdated={lastQuotesUpdate}
               isMaximized={true}
               onToggleMaximize={() => setViewMode('split')}
+              currentUser={currentUser}
+              onOpenAuthModal={() => setIsAuthModalOpen(true)}
             />
           </div>
         )}
@@ -540,6 +711,7 @@ ${holdings.map(h => `  * ${h.ticker} (${h.name} - ${h.assetType}): ${h.nominales
         onAddTransaction={handleAddTransaction}
         holdings={holdings}
         preselectedTicker={preselectedTicker}
+        dollarMep={marketRates.dollarMep}
       />
 
       <NewsDetailModal
@@ -554,6 +726,12 @@ ${holdings.map(h => `  * ${h.ticker} (${h.name} - ${h.assetType}): ${h.nominales
         marketRates={marketRates}
         onSaveRates={(updated) => setMarketRates(updated)}
         onRefreshLiveRates={fetchLiveRates}
+      />
+
+      {/* Google Firebase Authentication Modal */}
+      <AuthModal
+        isOpen={isAuthModalOpen && !currentUser}
+        onSuccess={() => setIsAuthModalOpen(false)}
       />
 
     </div>
