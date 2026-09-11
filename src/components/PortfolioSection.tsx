@@ -20,14 +20,19 @@ import {
   Radio,
   Eye
 } from 'lucide-react';
-import { Holding, Transaction, WatchlistItem } from '../types';
+import { Holding, Transaction, WatchlistItem, CurrencyDisplay } from '../types';
 import { User } from '../lib/firebase';
+import { calculateHoldingValuation, HoldingValuation } from '../lib/mepService';
 
 interface PortfolioSectionProps {
   holdings: Holding[];
   transactions: Transaction[];
   watchlist?: WatchlistItem[];
   dollarMep: number;
+  yesterdayDollarMep?: number;
+  currencyDisplay?: CurrencyDisplay;
+  onSelectCurrencyDisplay?: (currency: CurrencyDisplay) => void;
+  onToggleCurrency?: (currency: CurrencyDisplay) => void;
   onOpenTransactionModal: (preselectedTicker?: string) => void;
   onOpenAddWatchlistModal?: () => void;
   onUpdateHolding: (updated: Holding) => void;
@@ -50,6 +55,10 @@ export default function PortfolioSection({
   transactions,
   watchlist = [],
   dollarMep,
+  yesterdayDollarMep,
+  currencyDisplay = 'ARS',
+  onSelectCurrencyDisplay,
+  onToggleCurrency,
   onOpenTransactionModal,
   onOpenAddWatchlistModal,
   onUpdateHolding,
@@ -73,7 +82,20 @@ export default function PortfolioSection({
   const [editPurchasePrice, setEditPurchasePrice] = useState<number>(0);
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
 
-  // Calculate total portfolio value in ARS for weights
+  // Internal currency display state synced with parent
+  const [localCurrency, setLocalCurrency] = useState<CurrencyDisplay>(currencyDisplay);
+  const effectiveCurrency = (onToggleCurrency || onSelectCurrencyDisplay) ? currencyDisplay : localCurrency;
+
+  const handleToggleCurrency = (curr: CurrencyDisplay) => {
+    setLocalCurrency(curr);
+    if (onToggleCurrency) {
+      onToggleCurrency(curr);
+    } else if (onSelectCurrencyDisplay) {
+      onSelectCurrencyDisplay(curr);
+    }
+  };
+
+  // Calculate preliminary total portfolio value in ARS for weights
   const totalPortfolioArs = holdings.reduce((acc, h) => {
     const val = h.currency === 'USD' 
       ? h.nominales * h.currentPrice * dollarMep 
@@ -81,31 +103,31 @@ export default function PortfolioSection({
     return acc + val;
   }, 0);
 
-  // All holdings calculated with market metrics and ALWAYS sorted from highest to lowest weight
-  const holdingsSortedByWeight = [...holdings].map((h) => {
-    const valueArs = h.currency === 'USD' 
-      ? h.nominales * h.currentPrice * dollarMep 
-      : h.nominales * h.currentPrice;
-    const valueUsd = dollarMep > 0 ? valueArs / dollarMep : 0;
-    const investedArs = h.currency === 'USD'
-      ? h.nominales * h.purchasePrice * dollarMep
-      : h.nominales * h.purchasePrice;
-    const profitArs = valueArs - investedArs;
-    const profitPct = investedArs > 0 ? (profitArs / investedArs) * 100 : 0;
-    const weightPct = totalPortfolioArs > 0 ? (valueArs / totalPortfolioArs) * 100 : 0;
-    const isPositive = profitArs >= 0;
+  // All holdings calculated with market metrics, strictly using historical MEP for USD returns
+  const holdingValuations: HoldingValuation[] = holdings.map((h) => 
+    calculateHoldingValuation(
+      h, 
+      transactions, 
+      dollarMep, 
+      yesterdayDollarMep || dollarMep, 
+      totalPortfolioArs
+    )
+  );
 
-    return {
-      ...h,
-      valueArs,
-      valueUsd,
-      investedArs,
-      profitArs,
-      profitPct,
-      weightPct,
-      isPositive
-    };
-  }).sort((a, b) => b.valueArs - a.valueArs);
+  const holdingsSortedByWeight = [...holdingValuations].sort((a, b) => b.valueArs - a.valueArs);
+
+  // Portfolio Totals in ARS
+  const portfolioDailyChangeArs = holdingValuations.reduce((acc, h) => acc + h.dailyChangeArs, 0);
+  const prevTotalPortfolioArs = totalPortfolioArs - portfolioDailyChangeArs;
+  const portfolioDailyChangePct = prevTotalPortfolioArs > 0 ? (portfolioDailyChangeArs / prevTotalPortfolioArs) * 100 : 0;
+  const isPortfolioDailyPositive = portfolioDailyChangeArs >= 0;
+
+  // Portfolio Totals in USD (MEP)
+  const totalPortfolioUsd = holdingValuations.reduce((acc, h) => acc + h.valueUsd, 0);
+  const portfolioDailyChangeUsd = holdingValuations.reduce((acc, h) => acc + h.dailyChangeUsd, 0);
+  const prevTotalPortfolioUsd = totalPortfolioUsd - portfolioDailyChangeUsd;
+  const portfolioDailyChangePctUsd = prevTotalPortfolioUsd > 0 ? (portfolioDailyChangeUsd / prevTotalPortfolioUsd) * 100 : 0;
+  const isPortfolioDailyUsdPositive = portfolioDailyChangeUsd >= 0;
 
   // Separate assets into distinct groups (Acciones Locales, CEDEARs, and Renta Fija / Otros),
   // each internally ordered by weight descending
@@ -123,7 +145,7 @@ export default function PortfolioSection({
     dotColor: string;
     tagBg: string;
     tagTextColor: string;
-    items: typeof holdingsSortedByWeight;
+    items: HoldingValuation[];
     totalArs: number;
     totalUsd: number;
     totalWeightPct: number;
@@ -244,17 +266,80 @@ export default function PortfolioSection({
             <PieChart className="w-4 h-4" />
           </div>
           <div>
-            <h2 className="text-sm font-bold text-white tracking-tight flex items-center gap-1.5">
+            <h2 className="text-sm font-bold text-white tracking-tight flex items-center gap-1.5 flex-wrap">
               Mi Cartera
               <span className="text-[11px] font-mono text-[#f59e0b] bg-[#f59e0b]/10 border border-[#f59e0b]/30 px-1.5 rounded">
                 {holdings.length} activos
               </span>
+              {holdings.length > 0 && (
+                effectiveCurrency === 'USD' ? (
+                  <span 
+                    className={`text-[11px] font-mono font-bold px-1.5 py-0.2 rounded border flex items-center gap-0.5 ${
+                      isPortfolioDailyUsdPositive 
+                        ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' 
+                        : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+                    }`}
+                    title={`Rendimiento diario en USD (MEP): ${isPortfolioDailyUsdPositive ? '+' : ''}${portfolioDailyChangePctUsd.toFixed(2)}% (${isPortfolioDailyUsdPositive ? '+' : ''}${formatCurrency(portfolioDailyChangeUsd, 'USD')})`}
+                  >
+                    {isPortfolioDailyUsdPositive ? (
+                      <ArrowUpRight className="w-3 h-3" />
+                    ) : (
+                      <ArrowDownRight className="w-3 h-3" />
+                    )}
+                    {isPortfolioDailyUsdPositive ? '+' : ''}{portfolioDailyChangePctUsd.toFixed(2)}% hoy en USD
+                  </span>
+                ) : (
+                  <span 
+                    className={`text-[11px] font-mono font-bold px-1.5 py-0.2 rounded border flex items-center gap-0.5 ${
+                      isPortfolioDailyPositive 
+                        ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' 
+                        : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+                    }`}
+                    title={`Rendimiento diario en ARS: ${isPortfolioDailyPositive ? '+' : ''}${portfolioDailyChangePct.toFixed(2)}% (${isPortfolioDailyPositive ? '+' : ''}${formatCurrency(portfolioDailyChangeArs, 'ARS')})`}
+                  >
+                    {isPortfolioDailyPositive ? (
+                      <ArrowUpRight className="w-3 h-3" />
+                    ) : (
+                      <ArrowDownRight className="w-3 h-3" />
+                    )}
+                    {isPortfolioDailyPositive ? '+' : ''}{portfolioDailyChangePct.toFixed(2)}% hoy
+                  </span>
+                )
+              )}
             </h2>
           </div>
         </div>
 
-        {/* Tab selector and quick action */}
-        <div className="flex items-center gap-1.5">
+        {/* Tab selector, Currency toggle and quick action */}
+        <div className="flex items-center gap-1.5 flex-wrap justify-end">
+          {/* Currency Toggle (ARS / USD MEP) */}
+          <div className="bg-[#18181b] border border-[#27272a] p-0.5 rounded-lg flex items-center text-xs">
+            <button
+              type="button"
+              onClick={() => handleToggleCurrency('ARS')}
+              className={`px-2 py-0.5 rounded text-xs font-medium transition-all ${
+                effectiveCurrency === 'ARS'
+                  ? 'bg-[#27272a] text-[#f59e0b] font-bold shadow-xs'
+                  : 'text-[#a1a1aa] hover:text-white'
+              }`}
+              title="Ver valuación y rendimientos en Pesos (ARS)"
+            >
+              ARS ($)
+            </button>
+            <button
+              type="button"
+              onClick={() => handleToggleCurrency('USD')}
+              className={`px-2 py-0.5 rounded text-xs font-medium transition-all flex items-center gap-1 ${
+                effectiveCurrency === 'USD'
+                  ? 'bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/40 shadow-xs'
+                  : 'text-[#a1a1aa] hover:text-white'
+              }`}
+              title="Ver valuación y rendimientos en Dólares MEP tomando la fecha histórica de cada compra"
+            >
+              USD (MEP)
+            </button>
+          </div>
+
           <div className="bg-[#18181b] border border-[#27272a] p-0.5 rounded-lg flex items-center text-xs">
             <button
               type="button"
@@ -452,11 +537,38 @@ export default function PortfolioSection({
                     <tr className="text-[#71717a] uppercase text-[9px] tracking-wider font-semibold">
                       <th className="py-2 px-2.5">Activo</th>
                       <th className="py-2 px-2 text-right">Nominales</th>
-                      <th className="py-2 px-2 text-right">P. Compra</th>
-                      <th className="py-2 px-2 text-right">P. Actual</th>
-                      <th className="py-2 px-2 text-right">Valuación (ARS)</th>
-                      <th className="py-2 px-2 text-right">Val. (MEP)</th>
-                      <th className="py-2 px-2 text-right">Rend.</th>
+                      <th className="py-2 px-2 text-right">
+                        {effectiveCurrency === 'USD' ? (
+                          <div>
+                            <span>P. Compra USD</span>
+                            <span className="block text-[7px] text-[#f59e0b] font-normal lowercase tracking-normal">mep fecha</span>
+                          </div>
+                        ) : (
+                          'P. Compra'
+                        )}
+                      </th>
+                      <th className="py-2 px-2 text-right">
+                        {effectiveCurrency === 'USD' ? 'P. Actual USD' : 'P. Actual'}
+                      </th>
+                      <th className="py-2 px-2 text-right">
+                        {effectiveCurrency === 'USD' ? 'Valuación (USD)' : 'Valuación (ARS)'}
+                      </th>
+                      <th className="py-2 px-2 text-right">
+                        {effectiveCurrency === 'USD' ? 'Val. (ARS)' : 'Val. (MEP)'}
+                      </th>
+                      <th className="py-2 px-2 text-right">
+                        {effectiveCurrency === 'USD' ? (
+                          <div>
+                            <span>Rend. Histórico USD</span>
+                            <span className="block text-[7px] text-emerald-400 font-normal lowercase tracking-normal">vs mep compra</span>
+                          </div>
+                        ) : (
+                          'Rend. Histórico'
+                        )}
+                      </th>
+                      <th className="py-2 px-2 text-right">
+                        {effectiveCurrency === 'USD' ? 'Rend. Día USD' : 'Rend. Día'}
+                      </th>
                       <th className="py-2 px-2 text-center">Peso</th>
                       <th className="py-2 px-2 text-center">Acción</th>
                     </tr>
@@ -468,7 +580,7 @@ export default function PortfolioSection({
                         <Fragment key={`group-${group.id}`}>
                           {/* Group header section */}
                           <tr className="border-t-2 border-[#27272a] bg-[#161618]">
-                            <td colSpan={9} className="p-0">
+                            <td colSpan={10} className="p-0">
                               <div 
                                 onClick={() => toggleGroup(group.id)}
                                 className="py-2 px-2.5 flex flex-wrap items-center justify-between gap-2 cursor-pointer hover:bg-[#202024] transition-colors select-none"
@@ -498,12 +610,25 @@ export default function PortfolioSection({
                                 </div>
                                 <div className="flex items-center gap-2.5 text-xs font-mono">
                                   <span className="text-[#71717a] text-[10px] uppercase font-sans">Subtotal:</span>
-                                  <span className="text-white font-semibold">
-                                    {formatCurrency(group.totalArs, 'ARS')}
-                                  </span>
-                                  <span className="text-emerald-400 font-medium text-[11px]">
-                                    {formatCurrency(group.totalUsd, 'USD')}
-                                  </span>
+                                  {effectiveCurrency === 'USD' ? (
+                                    <>
+                                      <span className="text-emerald-400 font-bold text-xs">
+                                        {formatCurrency(group.totalUsd, 'USD')}
+                                      </span>
+                                      <span className="text-[#71717a] font-normal text-[10px]">
+                                        ({formatCurrency(group.totalArs, 'ARS')})
+                                      </span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <span className="text-white font-semibold">
+                                        {formatCurrency(group.totalArs, 'ARS')}
+                                      </span>
+                                      <span className="text-emerald-400 font-medium text-[11px]">
+                                        {formatCurrency(group.totalUsd, 'USD')}
+                                      </span>
+                                    </>
+                                  )}
                                   <span className="bg-[#27272a] text-[#f59e0b] px-1.5 py-0.5 rounded text-[10px] font-bold border border-[#f59e0b]/20">
                                     {group.totalWeightPct.toFixed(1)}% cartera
                                   </span>
@@ -569,7 +694,7 @@ export default function PortfolioSection({
                                 </td>
 
                                 {/* Purchase Price */}
-                                <td className="py-2 px-2 text-right font-mono text-[#a1a1aa] text-[11px]">
+                                <td className="py-2 px-2 text-right font-mono text-[11px]">
                                   {isEditing ? (
                                     <input
                                       type="number"
@@ -580,13 +705,27 @@ export default function PortfolioSection({
                                       className="w-22 px-1.5 py-0.5 bg-[#121214] border border-[#f59e0b] focus:ring-1 focus:ring-[#f59e0b] rounded text-white text-right text-xs outline-hidden"
                                       title="Presiona Enter para confirmar o Esc para cancelar"
                                     />
+                                  ) : effectiveCurrency === 'USD' ? (
+                                    <div>
+                                      <div className="font-semibold text-white">
+                                        {formatCurrency(h.purchasePriceUsd, 'USD')}
+                                      </div>
+                                      <div className="text-[9px] text-[#71717a]" title={`Dólar MEP de fecha de compra: $${h.purchaseMepRateAvg.toFixed(2)} (Ámbito)`}>
+                                        MEP: ${h.purchaseMepRateAvg.toFixed(0)}
+                                      </div>
+                                    </div>
                                   ) : (
-                                    formatCurrency(h.purchasePrice, h.currency)
+                                    <div>
+                                      <div className="text-[#a1a1aa]">{formatCurrency(h.purchasePrice, h.currency)}</div>
+                                      <div className="text-[9px] text-[#71717a]">
+                                        ≈ {formatCurrency(h.purchasePriceUsd, 'USD')}
+                                      </div>
+                                    </div>
                                   )}
                                 </td>
 
                                 {/* Current Price */}
-                                <td className="py-2 px-2 text-right font-mono text-white font-semibold text-[11px]">
+                                <td className="py-2 px-2 text-right font-mono font-semibold text-[11px]">
                                   {isEditing ? (
                                     <input
                                       type="number"
@@ -597,34 +736,85 @@ export default function PortfolioSection({
                                       className="w-22 px-1.5 py-0.5 bg-[#121214] border border-[#f59e0b] focus:ring-1 focus:ring-[#f59e0b] rounded text-white text-right text-xs outline-hidden"
                                       title="Presiona Enter para confirmar o Esc para cancelar"
                                     />
+                                  ) : effectiveCurrency === 'USD' ? (
+                                    <div>
+                                      <div className="text-white">{formatCurrency(h.currentPriceUsd, 'USD')}</div>
+                                      <div className="text-[9px] text-[#71717a] font-normal">
+                                        {formatCurrency(h.currentPrice, h.currency)}
+                                      </div>
+                                    </div>
                                   ) : (
                                     <div>
-                                      <div>{formatCurrency(h.currentPrice, h.currency)}</div>
-                                      <div className={`text-[9px] flex items-center justify-end ${h.dailyChangePct >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                        {h.dailyChangePct >= 0 ? '+' : ''}{h.dailyChangePct.toFixed(1)}%
+                                      <div className="text-white">{formatCurrency(h.currentPrice, h.currency)}</div>
+                                      <div className={`text-[9px] flex items-center justify-end ${h.dailyChangePctArs >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                        {h.dailyChangePctArs >= 0 ? '+' : ''}{h.dailyChangePctArs.toFixed(1)}%
                                       </div>
                                     </div>
                                   )}
                                 </td>
 
-                                {/* Value ARS */}
-                                <td className="py-2 px-2 text-right font-mono font-semibold text-white text-xs">
-                                  {formatCurrency(h.valueArs, 'ARS')}
+                                {/* Main Valuation */}
+                                <td className="py-2 px-2 text-right font-mono font-bold text-xs">
+                                  {effectiveCurrency === 'USD' ? (
+                                    <span className="text-emerald-400">{formatCurrency(h.valueUsd, 'USD')}</span>
+                                  ) : (
+                                    <span className="text-white">{formatCurrency(h.valueArs, 'ARS')}</span>
+                                  )}
                                 </td>
 
-                                {/* Value USD MEP */}
-                                <td className="py-2 px-2 text-right font-mono text-emerald-400 text-xs">
-                                  {formatCurrency(h.valueUsd, 'USD')}
+                                {/* Secondary Valuation */}
+                                <td className="py-2 px-2 text-right font-mono text-xs">
+                                  {effectiveCurrency === 'USD' ? (
+                                    <span className="text-[#a1a1aa]">{formatCurrency(h.valueArs, 'ARS')}</span>
+                                  ) : (
+                                    <span className="text-emerald-400">{formatCurrency(h.valueUsd, 'USD')}</span>
+                                  )}
                                 </td>
 
-                                {/* Profit / Loss */}
+                                {/* Total Historical Profit / Loss */}
                                 <td className="py-2 px-2 text-right font-mono">
-                                  <div className={`font-semibold text-xs ${h.isPositive ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                    {h.isPositive ? '+' : ''}{h.profitPct.toFixed(1)}%
-                                  </div>
-                                  <div className="text-[9px] text-[#71717a]">
-                                    {h.isPositive ? '+' : ''}{formatCurrency(h.profitArs, 'ARS')}
-                                  </div>
+                                  {effectiveCurrency === 'USD' ? (
+                                    <div>
+                                      <div className={`font-bold text-xs ${h.isUsdPositive ? 'text-emerald-400' : 'text-rose-400'}`} title="Rendimiento total histórico en USD considerando el Dólar MEP de Ámbito a la fecha de compra">
+                                        {h.profitPctUsd >= 0 ? '+' : ''}{h.profitPctUsd.toFixed(1)}%
+                                      </div>
+                                      <div className="text-[9px] text-[#71717a]">
+                                        {h.profitUsd >= 0 ? '+' : ''}{formatCurrency(h.profitUsd, 'USD')}
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <div>
+                                      <div className={`font-semibold text-xs ${h.isArsPositive ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                        {h.profitPctArs >= 0 ? '+' : ''}{h.profitPctArs.toFixed(1)}%
+                                      </div>
+                                      <div className="text-[9px] text-[#71717a]">
+                                        {h.profitArs >= 0 ? '+' : ''}{formatCurrency(h.profitArs, 'ARS')}
+                                      </div>
+                                    </div>
+                                  )}
+                                </td>
+
+                                {/* Daily Profit / Loss */}
+                                <td className="py-2 px-2 text-right font-mono">
+                                  {effectiveCurrency === 'USD' ? (
+                                    <div>
+                                      <div className={`font-semibold text-xs ${h.dailyChangeUsd >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                        {h.dailyChangePctUsd >= 0 ? '+' : ''}{h.dailyChangePctUsd.toFixed(1)}%
+                                      </div>
+                                      <div className="text-[9px] text-[#71717a]">
+                                        {h.dailyChangeUsd >= 0 ? '+' : ''}{formatCurrency(h.dailyChangeUsd, 'USD')}
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <div>
+                                      <div className={`font-semibold text-xs ${h.dailyChangeArs >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                        {h.dailyChangePctArs >= 0 ? '+' : ''}{h.dailyChangePctArs.toFixed(1)}%
+                                      </div>
+                                      <div className="text-[9px] text-[#71717a]">
+                                        {h.dailyChangeArs >= 0 ? '+' : ''}{formatCurrency(h.dailyChangeArs, 'ARS')}
+                                      </div>
+                                    </div>
+                                  )}
                                 </td>
 
                                 {/* Weight */}
@@ -821,48 +1011,80 @@ export default function PortfolioSection({
                   <th className="py-2 px-2">Ticker</th>
                   <th className="py-2 px-2 text-right">Nominales</th>
                   <th className="py-2 px-2 text-right">Precio</th>
-                  <th className="py-2 px-2 text-right">Total</th>
+                  <th className="py-2 px-2 text-right">
+                    <div>
+                      <span>Dólar MEP Fecha</span>
+                      <span className="block text-[7px] text-[#f59e0b] font-normal lowercase tracking-normal">Ámbito Histórico</span>
+                    </div>
+                  </th>
+                  <th className="py-2 px-2 text-right">Total ARS</th>
+                  <th className="py-2 px-2 text-right text-emerald-400">Total USD</th>
                   <th className="py-2 px-2 text-center">Acción</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#27272a]/60 font-mono">
                 {transactions.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="py-8 text-center text-[#71717a] font-sans">
+                    <td colSpan={9} className="py-8 text-center text-[#71717a] font-sans">
                       No hay transacciones registradas.
                     </td>
                   </tr>
                 ) : (
-                  transactions.map((tx) => (
-                    <tr key={tx.id} className="hover:bg-[#27272a]/40 text-xs">
-                      <td className="py-2 px-2.5 text-[#a1a1aa] font-sans text-[11px]">{tx.date}</td>
-                      <td className="py-2 px-2">
-                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded font-sans ${
-                          tx.type === 'Compra' 
-                            ? 'bg-emerald-500/15 text-emerald-400' 
-                            : 'bg-rose-500/15 text-rose-400'
-                        }`}>
-                          {tx.type}
-                        </span>
-                      </td>
-                      <td className="py-2 px-2 font-bold text-white">${tx.ticker}</td>
-                      <td className="py-2 px-2 text-right text-white">{tx.nominales.toLocaleString('es-AR')}</td>
-                      <td className="py-2 px-2 text-right text-[#a1a1aa]">{formatCurrency(tx.price, tx.currency)}</td>
-                      <td className="py-2 px-2 text-right font-bold text-white">
-                        {formatCurrency(tx.nominales * tx.price, tx.currency)}
-                      </td>
-                      <td className="py-2 px-2 text-center">
-                        <button
-                          type="button"
-                          onClick={() => onDeleteTransaction(tx.id)}
-                          className="p-1 text-[#71717a] hover:text-rose-400 rounded"
-                          title="Eliminar registro"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))
+                  transactions.map((tx) => {
+                    const effectiveMep = tx.mepRate && tx.mepRate > 0 ? tx.mepRate : dollarMep;
+                    const totalArs = tx.currency === 'USD' 
+                      ? tx.nominales * tx.price * effectiveMep 
+                      : tx.nominales * tx.price;
+                    const totalUsd = tx.currency === 'USD' 
+                      ? tx.nominales * tx.price 
+                      : (effectiveMep > 0 ? totalArs / effectiveMep : 0);
+
+                    return (
+                      <tr key={tx.id} className="hover:bg-[#27272a]/40 text-xs">
+                        <td className="py-2 px-2.5 text-[#a1a1aa] font-sans text-[11px]">{tx.date}</td>
+                        <td className="py-2 px-2">
+                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded font-sans ${
+                            tx.type === 'Compra' 
+                              ? 'bg-emerald-500/15 text-emerald-400' 
+                              : 'bg-rose-500/15 text-rose-400'
+                          }`}>
+                            {tx.type}
+                          </span>
+                        </td>
+                        <td className="py-2 px-2 font-bold text-white">${tx.ticker}</td>
+                        <td className="py-2 px-2 text-right text-white">{tx.nominales.toLocaleString('es-AR')}</td>
+                        <td className="py-2 px-2 text-right text-[#a1a1aa]">{formatCurrency(tx.price, tx.currency)}</td>
+                        <td className="py-2 px-2 text-right">
+                          {tx.mepRate && tx.mepRate > 0 ? (
+                            <div className="flex flex-col items-end">
+                              <span className="text-white font-semibold">${tx.mepRate.toFixed(2)}</span>
+                              <span className="text-[8px] text-[#f59e0b] bg-[#f59e0b]/10 px-1 rounded">
+                                {tx.sourceMep || 'Ámbito'}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-[#71717a] text-[10px]">-</span>
+                          )}
+                        </td>
+                        <td className="py-2 px-2 text-right font-semibold text-white">
+                          {formatCurrency(totalArs, 'ARS')}
+                        </td>
+                        <td className="py-2 px-2 text-right font-bold text-emerald-400">
+                          {formatCurrency(totalUsd, 'USD')}
+                        </td>
+                        <td className="py-2 px-2 text-center">
+                          <button
+                            type="button"
+                            onClick={() => onDeleteTransaction(tx.id)}
+                            className="p-1 text-[#71717a] hover:text-rose-400 rounded cursor-pointer"
+                            title="Eliminar registro"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>

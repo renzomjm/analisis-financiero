@@ -1,5 +1,7 @@
 export type AssetType = 'Acción Local' | 'CEDEAR' | 'Bono Soberano' | 'Letra' | 'ON Corporativa';
 
+export type CurrencyDisplay = 'ARS' | 'USD';
+
 export interface Holding {
   id: string;
   ticker: string;
@@ -10,6 +12,9 @@ export interface Holding {
   currentPrice: number;  // Precio actual de mercado
   currency: 'ARS' | 'USD';
   dailyChangePct: number;
+  purchaseDate?: string;
+  purchaseMepRate?: number; // Dólar MEP histórico promedio de compra
+  purchasePriceUsd?: number; // Precio promedio de compra en USD histórico
   notes?: string;
 }
 
@@ -21,6 +26,8 @@ export interface Transaction {
   nominales: number;
   price: number;
   currency: 'ARS' | 'USD';
+  mepRate?: number; // Dólar MEP vigente en la fecha de la operación (Ámbito)
+  sourceMep?: string;
   notes?: string;
 }
 
@@ -58,6 +65,7 @@ export interface MarketRates {
   dollarMepCompra?: number;
   dollarCclCompra?: number;
   dollarBlue?: number;
+  yesterdayDollarMep?: number;
   isLive?: boolean;
 }
 

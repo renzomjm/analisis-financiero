@@ -44,6 +44,39 @@
             "notes": { "type": "string" },
             "createdAt": { "type": "string" }
           }
+        },
+        "watchlist": {
+          "title": "WatchlistItem",
+          "description": "User custom monitored securities",
+          "type": "object",
+          "properties": {
+            "id": { "type": "string" },
+            "ticker": { "type": "string" },
+            "name": { "type": "string" },
+            "assetType": { "type": "string" },
+            "targetPrice": { "type": "number" },
+            "currentPrice": { "type": "number" },
+            "currency": { "type": "string" },
+            "dailyChangePct": { "type": "number" },
+            "notes": { "type": "string" },
+            "updatedAt": { "type": "string" }
+          }
+        },
+        "calendar": {
+          "title": "CalendarEvent",
+          "description": "User customized or synced financial calendar events",
+          "type": "object",
+          "properties": {
+            "id": { "type": "string" },
+            "date": { "type": "string" },
+            "ticker": { "type": "string" },
+            "title": { "type": "string" },
+            "type": { "type": "string" },
+            "description": { "type": "string" },
+            "impactLevel": { "type": "string" },
+            "isHoldingOrWatchlist": { "type": "boolean" },
+            "updatedAt": { "type": "string" }
+          }
         }
       }
     }

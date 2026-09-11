@@ -199,15 +199,20 @@ export default function AddWatchlistModal({
     const currentPrice = liveQuote?.price || 0;
     const dailyChangePct = liveQuote?.changePct || 0;
 
-    onAddWatchlist({
+    const itemPayload: Omit<WatchlistItem, 'id' | 'addedAt'> = {
       ticker: cleanTicker,
       name: name.trim() || cleanTicker,
       assetType,
       currency,
       currentPrice,
-      dailyChangePct,
-      notes: notes.trim() ? notes.trim() : undefined
-    });
+      dailyChangePct
+    };
+
+    if (notes.trim()) {
+      itemPayload.notes = notes.trim();
+    }
+
+    onAddWatchlist(itemPayload);
 
     onClose();
   };

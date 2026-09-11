@@ -195,7 +195,7 @@ export default function DockedChat({
                           Asistente Analítico Central
                         </span>
                         <span className="text-[9px] bg-[#27272a] text-[#f59e0b] px-1.5 py-0.2 rounded font-mono">
-                          Gemini 3.7 Flash
+                          Gemini 3.1 Flash
                         </span>
                       </div>
                       <div className="text-[10px] text-[#a1a1aa] flex items-center gap-1">

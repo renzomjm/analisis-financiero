@@ -13,6 +13,7 @@ import {
   Info
 } from 'lucide-react';
 import { AssetType, Holding, Transaction } from '../types';
+import { fetchHistoricalMep } from '../lib/mepService';
 import { 
   findMatchingTickers, 
   getSuggestedTypo, 
@@ -69,6 +70,26 @@ export default function TransactionModal({
   const [liveQuote, setLiveQuote] = useState<LiveQuoteData | null>(null);
   const [isLoadingQuote, setIsLoadingQuote] = useState<boolean>(false);
   const [quoteError, setQuoteError] = useState<string | null>(null);
+
+  // Historical MEP info for transaction date (Ámbito Financiero)
+  const [historicalMepInfo, setHistoricalMepInfo] = useState<{ mep: number; matchedDate: string; source: string } | null>(null);
+  const [isLoadingMep, setIsLoadingMep] = useState<boolean>(false);
+
+  // Fetch historical MEP whenever concertation date changes
+  useEffect(() => {
+    if (!isOpen || !date) return;
+    let isMounted = true;
+    setIsLoadingMep(true);
+    fetchHistoricalMep(date).then((res) => {
+      if (isMounted) {
+        setHistoricalMepInfo(res);
+        setIsLoadingMep(false);
+      }
+    }).catch(() => {
+      if (isMounted) setIsLoadingMep(false);
+    });
+    return () => { isMounted = false; };
+  }, [isOpen, date]);
 
   const dropdownRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -227,6 +248,8 @@ export default function TransactionModal({
         nominales: Number(nominales),
         price: Number(price),
         currency,
+        mepRate: historicalMepInfo?.mep || dollarMep,
+        sourceMep: historicalMepInfo?.source || 'Ámbito Financiero (dolar-mep-historico)',
         notes: notes.trim()
       },
       {
@@ -582,12 +605,50 @@ export default function TransactionModal({
             </div>
           </div>
 
+          {/* Historical Dólar MEP Card (Ámbito Financiero) */}
+          <div className="p-3 bg-[#18181b] border border-[#27272a] rounded-xl space-y-1.5">
+            <div className="flex items-center justify-between text-xs">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[#a1a1aa] font-medium">Dólar MEP a la fecha de compra:</span>
+                {isLoadingMep ? (
+                  <RefreshCw className="w-3 h-3 animate-spin text-[#f59e0b]" />
+                ) : (
+                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#f59e0b]/10 text-[#f59e0b] border border-[#f59e0b]/30 font-semibold">
+                    {historicalMepInfo?.source?.includes('Ámbito') ? 'Ámbito Oficial' : 'Mercado'}
+                  </span>
+                )}
+              </div>
+              <span className="font-mono font-bold text-white text-sm">
+                ${(historicalMepInfo?.mep || dollarMep).toFixed(2)}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between text-[11px] text-[#71717a] pt-1 border-t border-[#27272a]/60">
+              <span>
+                Cotización oficial tomada el {historicalMepInfo?.matchedDate || date}
+              </span>
+              <span className="font-mono font-semibold text-emerald-400">
+                {currency === 'ARS' ? (
+                  nominales * price > 0 ? (
+                    `Equivalente: US$ ${((nominales * price) / (historicalMepInfo?.mep || dollarMep)).toFixed(2)} MEP`
+                  ) : 'US$ 0.00'
+                ) : (
+                  nominales * price > 0 ? (
+                    `Equivalente: $${((nominales * price) * (historicalMepInfo?.mep || dollarMep)).toLocaleString('es-AR', { maximumFractionDigits: 0 })} ARS`
+                  ) : '$0 ARS'
+                )}
+              </span>
+            </div>
+          </div>
+
           {/* Total Preview */}
           <div className="p-3 bg-[#18181b] border border-[#27272a] rounded-xl flex items-center justify-between text-xs">
             <span className="text-[#a1a1aa]">Monto total de la operación:</span>
-            <span className="font-mono font-bold text-white text-sm sm:text-base">
-              {new Intl.NumberFormat('es-AR', { style: 'currency', currency }).format(nominales * price)}
-            </span>
+            <div className="text-right">
+              <span className="font-mono font-bold text-white text-sm sm:text-base">
+                {new Intl.NumberFormat('es-AR', { style: 'currency', currency }).format(nominales * price)}
+              </span>
+            </div>
           </div>
 
           {/* Action Buttons */}

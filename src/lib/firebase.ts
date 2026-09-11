@@ -16,8 +16,8 @@ import {
   deleteDoc, 
   writeBatch 
 } from 'firebase/firestore';
-import firebaseConfig from '../../firebase-applet-config.json';
-import { Holding, Transaction, WatchlistItem } from '../types';
+import { firebaseConfig } from './firebaseConfig';
+import { Holding, Transaction, WatchlistItem, CalendarEvent } from '../types';
 
 // Initialize Firebase App
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApps()[0];
@@ -27,10 +27,28 @@ export const auth = getAuth(app);
 const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
-// Initialize Firestore (with databaseId specified if provided in config)
-export const db = firebaseConfig.firestoreDatabaseId 
-  ? getFirestore(app, firebaseConfig.firestoreDatabaseId)
-  : getFirestore(app);
+// Initialize Firestore
+export const db = getFirestore(app);
+
+// Firestore Data Sanitizer: removes any `undefined` values that cause Firestore WriteBatch/setDoc to reject writes
+export function sanitizeForFirestore<T>(obj: T): T {
+  if (obj === null || obj === undefined) {
+    return null as any;
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(sanitizeForFirestore) as any;
+  }
+  if (typeof obj === 'object' && !(obj instanceof Date)) {
+    const clean: Record<string, any> = {};
+    for (const [key, value] of Object.entries(obj as Record<string, any>)) {
+      if (value !== undefined) {
+        clean[key] = sanitizeForFirestore(value);
+      }
+    }
+    return clean as T;
+  }
+  return obj;
+}
 
 // Authentication Functions
 export const signInWithGoogle = async (): Promise<User | null> => {
@@ -41,13 +59,13 @@ export const signInWithGoogle = async (): Promise<User | null> => {
     // Persist basic user profile
     try {
       const userRef = doc(db, 'users', user.uid);
-      await setDoc(userRef, {
+      await setDoc(userRef, sanitizeForFirestore({
         uid: user.uid,
-        email: user.email,
-        displayName: user.displayName,
-        photoURL: user.photoURL,
+        email: user.email || '',
+        displayName: user.displayName || '',
+        photoURL: user.photoURL || '',
         lastLoginAt: new Date().toISOString()
-      }, { merge: true });
+      }), { merge: true });
     } catch (err) {
       console.warn('Notice: saving user profile to Firestore:', err);
     }
@@ -78,17 +96,20 @@ export async function loadUserPortfolio(userId: string): Promise<{
   holdings: Holding[];
   transactions: Transaction[];
   watchlist: WatchlistItem[];
+  calendar: CalendarEvent[];
   isNewUser: boolean;
 }> {
   try {
     const holdingsRef = collection(db, 'users', userId, 'holdings');
     const transactionsRef = collection(db, 'users', userId, 'transactions');
     const watchlistRef = collection(db, 'users', userId, 'watchlist');
+    const calendarRef = collection(db, 'users', userId, 'calendar');
 
-    const [holdingsSnap, transactionsSnap, watchlistSnap] = await Promise.all([
+    const [holdingsSnap, transactionsSnap, watchlistSnap, calendarSnap] = await Promise.all([
       getDocs(holdingsRef),
       getDocs(transactionsRef),
-      getDocs(watchlistRef)
+      getDocs(watchlistRef),
+      getDocs(calendarRef)
     ]);
 
     const holdings: Holding[] = holdingsSnap.docs.map(d => ({
@@ -103,12 +124,16 @@ export async function loadUserPortfolio(userId: string): Promise<{
       ...d.data()
     } as WatchlistItem));
 
+    const calendar: CalendarEvent[] = calendarSnap.docs.map(d => ({
+      ...d.data()
+    } as CalendarEvent));
+
     // Sort transactions by date descending
     transactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-    const isNewUser = holdingsSnap.empty && transactionsSnap.empty && watchlistSnap.empty;
+    const isNewUser = holdingsSnap.empty && transactionsSnap.empty && watchlistSnap.empty && calendarSnap.empty;
 
-    return { holdings, transactions, watchlist, isNewUser };
+    return { holdings, transactions, watchlist, calendar, isNewUser };
   } catch (error) {
     console.error('Error loading portfolio from Firestore:', error);
     throw error;
@@ -133,10 +158,11 @@ export async function saveUserHoldings(userId: string, holdings: Holding[]): Pro
     // Write all current holdings
     holdings.forEach(h => {
       const docRef = doc(db, 'users', userId, 'holdings', h.id);
-      batch.set(docRef, {
+      const cleanData = sanitizeForFirestore({
         ...h,
         updatedAt: new Date().toISOString()
-      }, { merge: true });
+      });
+      batch.set(docRef, cleanData, { merge: true });
     });
 
     await batch.commit();
@@ -164,10 +190,11 @@ export async function saveUserTransactions(userId: string, transactions: Transac
     // Write all current transactions
     transactions.forEach(t => {
       const docRef = doc(db, 'users', userId, 'transactions', t.id);
-      batch.set(docRef, {
+      const cleanData = sanitizeForFirestore({
         ...t,
         updatedAt: new Date().toISOString()
-      }, { merge: true });
+      });
+      batch.set(docRef, cleanData, { merge: true });
     });
 
     await batch.commit();
@@ -195,15 +222,48 @@ export async function saveUserWatchlist(userId: string, watchlist: WatchlistItem
     // Write all current watchlist items
     watchlist.forEach(w => {
       const docRef = doc(db, 'users', userId, 'watchlist', w.id);
-      batch.set(docRef, {
+      const cleanData = sanitizeForFirestore({
         ...w,
         updatedAt: new Date().toISOString()
-      }, { merge: true });
+      });
+      batch.set(docRef, cleanData, { merge: true });
     });
 
     await batch.commit();
   } catch (error) {
     console.error('Error saving watchlist to Firestore:', error);
+    throw error;
+  }
+}
+
+export async function saveUserCalendar(userId: string, calendar: CalendarEvent[]): Promise<void> {
+  try {
+    const calendarRef = collection(db, 'users', userId, 'calendar');
+    const existingSnap = await getDocs(calendarRef);
+
+    const batch = writeBatch(db);
+
+    // Delete removed calendar items
+    const currentIds = new Set(calendar.map(c => c.id));
+    existingSnap.docs.forEach(d => {
+      if (!currentIds.has(d.id)) {
+        batch.delete(d.ref);
+      }
+    });
+
+    // Write all current calendar items
+    calendar.forEach(c => {
+      const docRef = doc(db, 'users', userId, 'calendar', c.id);
+      const cleanData = sanitizeForFirestore({
+        ...c,
+        updatedAt: new Date().toISOString()
+      });
+      batch.set(docRef, cleanData, { merge: true });
+    });
+
+    await batch.commit();
+  } catch (error) {
+    console.error('Error saving calendar to Firestore:', error);
     throw error;
   }
 }

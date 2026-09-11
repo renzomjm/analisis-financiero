@@ -32,9 +32,9 @@ export default function NewsDetailModal({
                 {newsItem.category}
               </span>
 
-              {newsItem.relatedTickers.map(ticker => (
+              {newsItem.relatedTickers.map((ticker, idx) => (
                 <span
-                  key={ticker}
+                  key={`${ticker}-${idx}`}
                   className="font-mono text-xs font-bold bg-[#27272a] text-white px-2 py-0.5 rounded border border-[#3f3f46]"
                 >
                   ${ticker}
@@ -67,13 +67,28 @@ export default function NewsDetailModal({
 
         {/* Content body */}
         <div className="p-5 sm:p-6 overflow-y-auto space-y-4 flex-1 text-sm text-[#d4d4d8] leading-relaxed">
-          <div className="bg-[#18181b] border border-[#27272a] p-3.5 rounded-xl text-xs text-[#a1a1aa] font-medium leading-normal italic">
-            "{newsItem.summary}"
+          <div className="bg-[#18181b] border border-[#27272a] p-3.5 rounded-xl text-xs text-[#e2e8f0] font-medium leading-relaxed">
+            <span className="text-[#f59e0b] font-semibold block mb-1">Resumen objetivo:</span>
+            {newsItem.summary}
           </div>
 
           <div className="whitespace-pre-line text-xs sm:text-sm text-[#e2e8f0] space-y-3">
             {newsItem.fullContent}
           </div>
+
+          {newsItem.url && (
+            <div className="pt-2">
+              <a
+                href={newsItem.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#27272a] hover:bg-[#3f3f46] text-white text-xs font-semibold rounded-lg transition-all border border-[#3f3f46]"
+              >
+                <span>Ver publicación en fuente oficial ({newsItem.source})</span>
+                <ExternalLink className="w-3.5 h-3.5 text-[#f59e0b]" />
+              </a>
+            </div>
+          )}
         </div>
 
         {/* Footer actions */}
@@ -86,17 +101,31 @@ export default function NewsDetailModal({
             Cerrar
           </button>
 
-          <button
-            type="button"
-            onClick={() => {
-              onAskAssistant(newsItem);
-              onClose();
-            }}
-            className="flex items-center gap-1.5 px-4 py-2 bg-[#f59e0b] hover:bg-[#d97706] text-[#09090b] text-xs font-bold rounded-xl shadow-sm transition-all"
-          >
-            <Sparkles className="w-4 h-4" />
-            <span>Consultar impacto con el Asistente</span>
-          </button>
+          <div className="flex items-center gap-2">
+            {newsItem.url && (
+              <a
+                href={newsItem.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 px-3 py-2 bg-[#1f1f23] hover:bg-[#27272a] border border-[#3f3f46] text-[#e2e8f0] hover:text-white text-xs font-medium rounded-xl transition-all"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span>Abrir enlace</span>
+              </a>
+            )}
+
+            <button
+              type="button"
+              onClick={() => {
+                onAskAssistant(newsItem);
+                onClose();
+              }}
+              className="flex items-center gap-1.5 px-4 py-2 bg-[#f59e0b] hover:bg-[#d97706] text-[#09090b] text-xs font-bold rounded-xl shadow-sm transition-all"
+            >
+              <Sparkles className="w-4 h-4" />
+              <span>Consultar impacto con el Asistente</span>
+            </button>
+          </div>
         </div>
 
       </div>

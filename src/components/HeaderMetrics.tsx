@@ -1,4 +1,4 @@
-import { DollarSign, TrendingUp, RefreshCw, PlusCircle, Edit3, ArrowUpRight, ArrowDownRight, Globe, LayoutGrid, Briefcase, Newspaper, Calendar, LogOut, User as UserIcon, Eye } from 'lucide-react';
+import { RefreshCw, PlusCircle, Edit3, ArrowUpRight, ArrowDownRight, Globe, LayoutGrid, Briefcase, Newspaper, Calendar, LogOut, User as UserIcon, Eye } from 'lucide-react';
 import { MarketRates } from '../types';
 import { User } from '../lib/firebase';
 
@@ -9,8 +9,14 @@ interface HeaderMetricsProps {
   totalUsdMep: number;
   totalProfitArs: number;
   totalProfitPct: number;
+  totalProfitUsd?: number;
+  totalProfitPctUsd?: number;
   dailyChangeArs: number;
   dailyChangePct: number;
+  dailyChangeUsd?: number;
+  dailyChangePctUsd?: number;
+  currencyDisplay?: 'ARS' | 'USD';
+  onSelectCurrencyDisplay?: (currency: 'ARS' | 'USD') => void;
   marketRates: MarketRates;
   watchlistCount?: number;
   onOpenTransactionModal: () => void;
@@ -31,8 +37,14 @@ export default function HeaderMetrics({
   totalUsdMep,
   totalProfitArs,
   totalProfitPct,
+  totalProfitUsd = 0,
+  totalProfitPctUsd = 0,
   dailyChangeArs,
   dailyChangePct,
+  dailyChangeUsd = 0,
+  dailyChangePctUsd = 0,
+  currencyDisplay = 'ARS',
+  onSelectCurrencyDisplay,
   marketRates,
   watchlistCount = 0,
   onOpenTransactionModal,
@@ -63,29 +75,20 @@ export default function HeaderMetrics({
     }).format(val);
   };
 
-  const isProfitPositive = totalProfitArs >= 0;
-  const isDailyPositive = dailyChangeArs >= 0;
+  const isProfitArsPositive = totalProfitArs >= 0;
+  const isProfitUsdPositive = totalProfitUsd >= 0;
+  const isDailyArsPositive = dailyChangeArs >= 0;
+  const isDailyUsdPositive = dailyChangeUsd >= 0;
+
+  const isProfitPositive = currencyDisplay === 'USD' ? isProfitUsdPositive : isProfitArsPositive;
+  const isDailyPositive = currencyDisplay === 'USD' ? isDailyUsdPositive : isDailyArsPositive;
 
   return (
     <header className="bg-[#121214] border-b border-[#27272a] px-3 lg:px-6 py-2.5 sticky top-0 z-30 shadow-xs">
       <div className="max-w-[1760px] mx-auto flex flex-col xl:flex-row xl:items-center justify-between gap-2.5">
         
-        {/* Left: Brand + View Switcher */}
+        {/* Left: View Switcher */}
         <div className="flex items-center justify-between sm:justify-start gap-3">
-          <div className="flex items-center gap-2">
-            <div className="bg-[#f59e0b]/15 border border-[#f59e0b]/30 p-1.5 rounded-lg text-[#f59e0b]">
-              <TrendingUp className="w-4 h-4" />
-            </div>
-            <div>
-              <div className="flex items-center gap-1.5">
-                <span className="text-sm font-black tracking-tight text-white font-mono">ARG-INTEL</span>
-                <span className="text-[9px] font-bold bg-[#f59e0b]/15 text-[#f59e0b] border border-[#f59e0b]/30 px-1.5 py-0.2 rounded uppercase">
-                  16" Pro
-                </span>
-              </div>
-            </div>
-          </div>
-
           {/* Section View Switcher (Desplegar secciones) */}
           <div className="bg-[#18181b] border border-[#27272a] p-0.5 rounded-lg flex items-center text-xs">
             <button
@@ -165,33 +168,140 @@ export default function HeaderMetrics({
           </div>
         </div>
 
-        {/* Center: High-Density Ticker Metrics Chips */}
+        {/* Center: High-Density Ticker Metrics Chips & Currency Toggle */}
         <div className="flex items-center flex-wrap gap-2 text-xs">
           
-          {/* Chip 1: Total ARS / USD MEP */}
-          <div className="bg-[#18181b] border border-[#27272a] px-2.5 py-1 rounded-lg flex items-center gap-2">
-            <span className="text-[10px] uppercase font-bold text-[#71717a]">Total</span>
-            <span className="font-bold text-white font-mono text-xs sm:text-sm">
-              {formatArs(totalArs)}
+          {/* Currency Mode Switcher: ARS vs USD MEP */}
+          <div className="bg-[#18181b] border border-[#27272a] p-0.5 rounded-lg flex items-center shrink-0">
+            <button
+              type="button"
+              onClick={() => onSelectCurrencyDisplay?.('ARS')}
+              className={`px-2 py-0.5 rounded text-[11px] font-mono font-bold transition-all cursor-pointer ${
+                currencyDisplay === 'ARS'
+                  ? 'bg-[#f59e0b] text-black shadow-xs'
+                  : 'text-[#71717a] hover:text-white'
+              }`}
+              title="Ver rendimientos y valuaciones en Pesos Argentinos (ARS)"
+            >
+              ARS ($)
+            </button>
+            <button
+              type="button"
+              onClick={() => onSelectCurrencyDisplay?.('USD')}
+              className={`px-2 py-0.5 rounded text-[11px] font-mono font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                currencyDisplay === 'USD'
+                  ? 'bg-emerald-500 text-black shadow-xs'
+                  : 'text-[#71717a] hover:text-white'
+              }`}
+              title="Ver rendimientos y valuaciones en Dólares MEP tomando MEP histórico de cada compra (Ámbito Financiero)"
+            >
+              <span>USD (MEP)</span>
+              {currencyDisplay === 'USD' && (
+                <span className="text-[9px] bg-black/30 text-emerald-950 px-1 py-0.1 rounded font-sans uppercase font-bold">
+                  Histórico
+                </span>
+              )}
+            </button>
+          </div>
+
+          {/* Chip 1: Saldo Total Cartera (ARS / USD MEP) */}
+          <div 
+            className="bg-[#18181b] border border-[#27272a] px-2.5 py-1 rounded-lg flex items-center gap-2"
+            title={`Saldo total valorizado de la cartera: ${formatArs(totalArs)} ARS / ${formatUsd(totalUsdMep)} a Dólar MEP`}
+          >
+            <span className="text-[10px] uppercase font-bold text-[#71717a]">Saldo Total</span>
+            {currencyDisplay === 'USD' ? (
+              <>
+                <span className="font-bold text-emerald-400 font-mono text-xs sm:text-sm">
+                  {formatUsd(totalUsdMep)}
+                </span>
+                <span className="text-[#52525b]">|</span>
+                <span className="text-[#a1a1aa] font-mono font-medium text-xs">
+                  {formatArs(totalArs)}
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="font-bold text-white font-mono text-xs sm:text-sm">
+                  {formatArs(totalArs)}
+                </span>
+                <span className="text-[#52525b]">|</span>
+                <span className="text-emerald-400 font-mono font-semibold text-xs">
+                  {formatUsd(totalUsdMep)}
+                </span>
+              </>
+            )}
+          </div>
+
+          {/* Chip 2: Rendimiento Diario General */}
+          <div 
+            id="header-rendimiento-diario"
+            className={`border px-2.5 py-1 rounded-lg flex items-center gap-1.5 transition-all shadow-xs ${
+              isDailyPositive 
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' 
+                : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+            }`}
+            title={
+              currencyDisplay === 'USD'
+                ? `Rendimiento Diario en USD (MEP): ${isDailyPositive ? '+' : ''}${dailyChangePctUsd.toFixed(2)}% (${isDailyPositive ? '+' : ''}${formatUsd(dailyChangeUsd)}) considerando la variación de activos y tipo de cambio MEP diario`
+                : `Rendimiento Diario en ARS: ${isDailyPositive ? '+' : ''}${dailyChangePct.toFixed(2)}% (${isDailyPositive ? '+' : ''}${formatArs(dailyChangeArs)})`
+            }
+          >
+            <div className="flex items-center gap-1">
+              {isDailyPositive ? (
+                <ArrowUpRight className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              ) : (
+                <ArrowDownRight className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+              )}
+              <span className="text-[10px] uppercase font-bold tracking-wider opacity-85">Rend. Día</span>
+            </div>
+            <span className="font-mono font-bold text-xs sm:text-sm">
+              {currencyDisplay === 'USD' ? (
+                `${isDailyPositive ? '+' : ''}${dailyChangePctUsd.toFixed(2)}%`
+              ) : (
+                `${isDailyPositive ? '+' : ''}${dailyChangePct.toFixed(2)}%`
+              )}
             </span>
-            <span className="text-[#52525b]">|</span>
-            <span className="text-emerald-400 font-mono font-semibold text-xs">
-              {formatUsd(totalUsdMep)}
-            </span>
-            <span className={`text-[10px] font-bold flex items-center ${isDailyPositive ? 'text-emerald-400' : 'text-rose-400'}`}>
-              {isDailyPositive ? '+' : ''}{dailyChangePct.toFixed(1)}%
+            <span className="text-[10px] font-mono opacity-80 hidden sm:inline">
+              {currencyDisplay === 'USD' ? (
+                `(${isDailyPositive ? '+' : ''}${formatUsd(dailyChangeUsd)})`
+              ) : (
+                `(${isDailyPositive ? '+' : ''}${formatArs(dailyChangeArs)})`
+              )}
             </span>
           </div>
 
-          {/* Chip 2: Rendimiento Histórico */}
-          <div className="bg-[#18181b] border border-[#27272a] px-2.5 py-1 rounded-lg flex items-center gap-1.5">
-            <span className="text-[10px] uppercase font-bold text-[#71717a]">Rend. Total</span>
+          {/* Chip 3: Rendimiento Histórico Total */}
+          <div 
+            className="bg-[#18181b] border border-[#27272a] px-2.5 py-1 rounded-lg flex items-center gap-1.5"
+            title={
+              currencyDisplay === 'USD'
+                ? `Rendimiento Total Histórico en USD (MEP): ${isProfitPositive ? '+' : ''}${totalProfitPctUsd.toFixed(2)}% (${isProfitPositive ? '+' : ''}${formatUsd(totalProfitUsd)}). Cada compra se computó con el Dólar MEP de su fecha de concertación (Ámbito Financiero).`
+                : `Rendimiento total histórico en ARS respecto al costo de compra: ${isProfitPositive ? '+' : ''}${totalProfitPct.toFixed(2)}% (${isProfitPositive ? '+' : ''}${formatArs(totalProfitArs)})`
+            }
+          >
+            <span className="text-[10px] uppercase font-bold text-[#71717a]">
+              {currencyDisplay === 'USD' ? 'Rend. Total USD' : 'Rend. Total'}
+            </span>
             <span className={`font-mono font-bold text-xs ${isProfitPositive ? 'text-emerald-400' : 'text-rose-400'}`}>
-              {isProfitPositive ? '+' : ''}{totalProfitPct.toFixed(2)}%
+              {currencyDisplay === 'USD' ? (
+                `${isProfitPositive ? '+' : ''}${totalProfitPctUsd.toFixed(2)}%`
+              ) : (
+                `${isProfitPositive ? '+' : ''}${totalProfitPct.toFixed(2)}%`
+              )}
             </span>
             <span className="text-[#71717a] text-[10px] hidden sm:inline">
-              ({isProfitPositive ? '+' : ''}{formatArs(totalProfitArs)})
+              {currencyDisplay === 'USD' ? (
+                `(${isProfitPositive ? '+' : ''}${formatUsd(totalProfitUsd)})`
+              ) : (
+                `(${isProfitPositive ? '+' : ''}${formatArs(totalProfitArs)})`
+              )}
             </span>
+            {currencyDisplay === 'USD' && (
+              <span className="text-[9px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-1 py-0.2 rounded font-sans hidden md:inline">
+                MEP Histórico
+              </span>
+            )}
           </div>
 
           {/* Chip 3: Cotización MEP & CCL */}

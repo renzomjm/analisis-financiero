@@ -6,13 +6,20 @@ import {
   Sparkles, 
   Clock, 
   Maximize2,
-  Minimize2
+  Minimize2,
+  Trash2,
+  Plus,
+  RefreshCw
 } from 'lucide-react';
 import { CalendarEvent } from '../types';
+import AddCalendarEventModal from './AddCalendarEventModal';
 
 interface CalendarSectionProps {
   events: CalendarEvent[];
   onAskAssistantAboutEvent: (event: CalendarEvent) => void;
+  onDeleteEvent?: (eventId: string) => void;
+  onAddEvent?: (event: Omit<CalendarEvent, 'id'>) => void;
+  onSyncOfficialCalendar?: () => void;
   isMaximized?: boolean;
   onToggleMaximize?: () => void;
 }
@@ -20,12 +27,16 @@ interface CalendarSectionProps {
 export default function CalendarSection({
   events,
   onAskAssistantAboutEvent,
+  onDeleteEvent,
+  onAddEvent,
+  onSyncOfficialCalendar,
   isMaximized = false,
   onToggleMaximize
 }: CalendarSectionProps) {
   // Current month state: September 2026
   const [currentDate, setCurrentDate] = useState<Date>(new Date(2026, 8, 1));
-  const [selectedDayStr, setSelectedDayStr] = useState<string>('2026-09-08');
+  const [selectedDayStr, setSelectedDayStr] = useState<string>('2026-09-11');
+  const [isAddModalOpen, setIsAddModalOpen] = useState<boolean>(false);
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -64,12 +75,14 @@ export default function CalendarSection({
   const selectedDayEvents = eventsByDate[selectedDayStr] || [];
 
   return (
-    <div className={`bg-[#121214] border border-[#27272a] rounded-xl flex flex-col justify-between shadow-xs transition-all overflow-hidden ${
-      isMaximized ? 'p-4 sm:p-5 h-full' : 'p-2.5 sm:p-3 h-full'
+    <div className={`bg-[#121214] border border-[#27272a] rounded-xl flex flex-col shadow-xs transition-all ${
+      isMaximized 
+        ? 'p-4 sm:p-5 h-full overflow-y-auto' 
+        : 'p-2 sm:p-2.5 h-full overflow-y-auto scrollbar-thin'
     }`}>
       
-      {/* Top section: Header & Calendar */}
-      <div className="flex flex-col min-h-0">
+      {/* Top section: Header & Calendar Grid */}
+      <div className="flex flex-col shrink-0">
         {/* Header */}
         <div className="flex items-center justify-between pb-1.5 border-b border-[#27272a] mb-1.5">
           <div className="flex items-center gap-1.5">
@@ -105,6 +118,30 @@ export default function CalendarSection({
               </button>
             </div>
 
+            {onAddEvent && (
+              <button
+                type="button"
+                onClick={() => setIsAddModalOpen(true)}
+                title="Agregar nuevo evento al calendario"
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#18181b] hover:bg-[#27272a] border border-[#27272a] text-[#a1a1aa] hover:text-[#f59e0b] text-[9px] font-medium transition-colors"
+              >
+                <Plus className="w-2.5 h-2.5" />
+                <span className="hidden sm:inline">Evento</span>
+              </button>
+            )}
+
+            {onSyncOfficialCalendar && (
+              <button
+                type="button"
+                onClick={onSyncOfficialCalendar}
+                title="Sincronizar fechas oficiales confirmadas con el Asistente"
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#18181b] hover:bg-[#27272a] border border-[#27272a] text-[#a1a1aa] hover:text-sky-400 text-[9px] font-medium transition-colors"
+              >
+                <RefreshCw className="w-2.5 h-2.5" />
+                <span className="hidden sm:inline">Sincronizar</span>
+              </button>
+            )}
+
             {onToggleMaximize && (
               <button
                 type="button"
@@ -119,7 +156,7 @@ export default function CalendarSection({
         </div>
 
         {/* Legend chips */}
-        <div className="flex items-center gap-2 text-[8px] text-[#a1a1aa] mb-1">
+        <div className="flex items-center gap-2 text-[8px] text-[#a1a1aa] mb-1.5">
           <span className="flex items-center gap-1">
             <span className="w-1.5 h-1.5 rounded-full bg-[#f59e0b]" />
             <span>Balance</span>
@@ -135,17 +172,17 @@ export default function CalendarSection({
         </div>
 
         {/* Calendar Grid */}
-        <div className={`grid grid-cols-7 gap-0.5 text-center ${isMaximized ? 'mb-4' : 'mb-1.5'}`}>
+        <div className={`grid grid-cols-7 gap-0.5 sm:gap-1 text-center ${isMaximized ? 'mb-4' : 'mb-2'}`}>
           {/* Days of week */}
           {daysOfWeek.map((d, i) => (
-            <div key={`${d}-${i}`} className="text-[8px] uppercase font-bold text-[#71717a] py-0.2">
+            <div key={`${d}-${i}`} className="text-[8px] sm:text-[9px] uppercase font-bold text-[#71717a] py-0.5">
               {d}
             </div>
           ))}
 
           {/* Empty cells before month start */}
           {Array.from({ length: firstDayIndex }).map((_, i) => (
-            <div key={`empty-${i}`} className={isMaximized ? 'h-12' : 'h-5'} />
+            <div key={`empty-${i}`} className={isMaximized ? 'h-12' : 'h-5 sm:h-6'} />
           ))}
 
           {/* Month days */}
@@ -155,6 +192,7 @@ export default function CalendarSection({
             const dayEvents = eventsByDate[dateStr] || [];
             const hasEvents = dayEvents.length > 0;
             const isSelected = selectedDayStr === dateStr;
+            const isToday = dateStr === '2026-09-09';
             
             const hasBalance = dayEvents.some(e => e.type === 'Balance');
             const hasMacro = dayEvents.some(e => e.type === 'Macro');
@@ -166,23 +204,29 @@ export default function CalendarSection({
                 type="button"
                 onClick={() => setSelectedDayStr(dateStr)}
                 className={`rounded flex flex-col items-center justify-between transition-all ${
-                  isMaximized ? 'h-14 sm:h-16 p-1 text-xs' : 'h-5 sm:h-5.5 p-0.5 text-[9px]'
+                  isMaximized 
+                    ? 'h-14 sm:h-16 p-1 text-xs' 
+                    : 'h-5 sm:h-6 p-0.5 text-[9px] min-h-[20px]'
                 } ${
                   isSelected 
                     ? 'bg-[#f59e0b]/25 border border-[#f59e0b] text-white font-bold' 
+                    : isToday
+                    ? 'bg-[#27272a] border border-[#f59e0b]/60 text-white font-semibold'
                     : hasEvents
                     ? 'bg-[#18181b] border border-[#3f3f46] text-white hover:border-[#f59e0b]/50'
-                    : 'bg-[#18181b]/40 hover:bg-[#18181b] text-[#71717a]'
+                    : 'bg-[#18181b]/40 hover:bg-[#18181b] text-[#a1a1aa] hover:text-white'
                 }`}
               >
                 <span className="leading-none">{dayNumber}</span>
 
-                {hasEvents && (
-                  <div className="flex items-center gap-0.5 leading-none">
+                {hasEvents ? (
+                  <div className="flex items-center gap-0.5 leading-none mt-0.5">
                     {hasBalance && <span className="w-1 h-1 rounded-full bg-[#f59e0b]" />}
                     {hasMacro && <span className="w-1 h-1 rounded-full bg-sky-400" />}
                     {hasDividend && <span className="w-1 h-1 rounded-full bg-emerald-400" />}
                   </div>
+                ) : (
+                  <span className="w-1 h-1 opacity-0" />
                 )}
               </button>
             );
@@ -190,8 +234,8 @@ export default function CalendarSection({
         </div>
       </div>
 
-      {/* Selected Day Agenda view - Fixed cleanly at bottom of card */}
-      <div className="bg-[#18181b] border border-[#27272a] rounded-lg p-1.5 shrink-0">
+      {/* Selected Day Agenda view */}
+      <div className="bg-[#18181b] border border-[#27272a] rounded-lg p-1.5 shrink-0 mt-auto">
         <div className="flex items-center justify-between pb-1 border-b border-[#27272a]/80 mb-1 text-[10px]">
           <div className="flex items-center gap-1 text-white font-semibold">
             <Clock className="w-2.5 h-2.5 text-[#f59e0b]" />
@@ -202,15 +246,15 @@ export default function CalendarSection({
           </span>
         </div>
 
-        <div className={`space-y-1 overflow-y-auto pr-0.5 ${isMaximized ? 'max-h-[220px]' : 'max-h-[55px] xl:max-h-[65px]'}`}>
+        <div className={`space-y-1 overflow-y-auto pr-0.5 ${isMaximized ? 'max-h-[220px]' : 'max-h-[50px] xl:max-h-[60px]'}`}>
           {selectedDayEvents.length === 0 ? (
-            <div className="text-center py-1 text-[#71717a] text-[9px]">
+            <div className="text-center py-0.5 text-[#71717a] text-[9px]">
               Sin eventos para este día.
             </div>
           ) : (
-            selectedDayEvents.map(ev => (
+            selectedDayEvents.map((ev, evIdx) => (
               <div 
-                key={ev.id} 
+                key={`${ev.id}-${evIdx}`} 
                 className="p-1 rounded bg-[#121214] border border-[#27272a] flex items-center justify-between gap-1.5 text-xs"
               >
                 <div className="flex items-center gap-1 min-w-0">
@@ -229,19 +273,44 @@ export default function CalendarSection({
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => onAskAssistantAboutEvent(ev)}
-                  title="Consultar al Asistente sobre este evento"
-                  className="p-0.5 text-[#f59e0b] hover:bg-[#f59e0b]/20 rounded shrink-0"
-                >
-                  <Sparkles className="w-2.5 h-2.5" />
-                </button>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => onAskAssistantAboutEvent(ev)}
+                    title="Consultar al Asistente sobre este evento"
+                    className="p-1 text-[#f59e0b] hover:bg-[#f59e0b]/20 rounded transition-colors"
+                  >
+                    <Sparkles className="w-2.5 h-2.5" />
+                  </button>
+
+                  {onDeleteEvent && (
+                    <button
+                      type="button"
+                      onClick={() => onDeleteEvent(ev.id)}
+                      title="Eliminar este evento del calendario"
+                      className="p-1 text-[#71717a] hover:text-rose-400 hover:bg-rose-500/10 rounded transition-colors"
+                    >
+                      <Trash2 className="w-2.5 h-2.5" />
+                    </button>
+                  )}
+                </div>
               </div>
             ))
           )}
         </div>
       </div>
+
+      {isAddModalOpen && onAddEvent && (
+        <AddCalendarEventModal
+          isOpen={isAddModalOpen}
+          onClose={() => setIsAddModalOpen(false)}
+          onAddEvent={(newEv) => {
+            onAddEvent(newEv);
+            setIsAddModalOpen(false);
+          }}
+          defaultDate={selectedDayStr}
+        />
+      )}
 
     </div>
   );
